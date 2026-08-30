@@ -8,6 +8,7 @@ import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
 import { ShiftPatternDayEditor, type PatternDayInput } from '@/shared/components/ShiftPatternDayEditor';
 import { colors, spacing } from '@/shared/theme';
+import { invalidateShiftQueries } from '@/features/shifts/utils/invalidateShiftQueries';
 
 export default function EditShiftPatternScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -62,7 +63,7 @@ export default function EditShiftPatternScreen() {
         })),
       });
       await queryClient.invalidateQueries({ queryKey: ['shift-patterns'] });
-      await queryClient.invalidateQueries({ queryKey: ['shifts-today'] });
+      await invalidateShiftQueries(queryClient);
       Alert.alert('Başarılı', 'Döngü güncellendi.', [{ text: 'Tamam', onPress: () => router.back() }]);
     } catch (e) {
       Alert.alert('Hata', e instanceof Error ? e.message : 'Güncelleme başarısız.');
@@ -81,6 +82,7 @@ export default function EditShiftPatternScreen() {
           try {
             await getRepositories().shifts.deletePattern(id);
             await queryClient.invalidateQueries({ queryKey: ['shift-patterns'] });
+            await invalidateShiftQueries(queryClient);
             router.back();
           } catch (e) {
             Alert.alert('Hata', e instanceof Error ? e.message : 'Silinemedi.');

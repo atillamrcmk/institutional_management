@@ -3,7 +3,7 @@ import { useRouter } from 'expo-router';
 import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { ShiftBadge } from '@/shared/components/Badge';
 import { formatSlotLabel } from '@/features/shifts/constants/shiftDefaults';
-import type { UnitDaySchedule } from '@/features/shifts/services/scheduleService';
+import type { ShiftSlotAssignment, UnitDaySchedule } from '@/features/shifts/services/scheduleService';
 import { colors, modules, radius, spacing, typography } from '@/shared/theme';
 import { formatDisplayDate, getPersonnelFullName } from '@/shared/utils/id';
 
@@ -23,29 +23,50 @@ export function UnitShiftScheduleCard({ schedule, compact, onPressDate }: UnitSh
         <Text style={styles.date}>{formatDisplayDate(schedule.date)}</Text>
       </Pressable>
 
-      <ShiftSlotRow
+      {schedule.collisions.length > 0 ? (
+        <View style={styles.warningBox}>
+          {schedule.collisions.map((msg) => (
+            <Text key={msg} style={styles.warningText}>
+              ⚠ {msg}
+            </Text>
+          ))}
+        </View>
+      ) : null}
+
+      <ShiftSlotSection
         label="Gündüz"
-        slot={schedule.daySlot}
+        slots={schedule.daySlots}
         emptyText="Gündüz vardiyası yok"
         compact={compact}
         onGroupPress={(id) => router.push(`/(admin)/shifts/${id}`)}
       />
-      <ShiftSlotRow
+      <ShiftSlotSection
         label="Gece"
-        slot={schedule.nightSlot}
+        slots={schedule.nightSlots}
         emptyText="Gece vardiyası yok"
         compact={compact}
         onGroupPress={(id) => router.push(`/(admin)/shifts/${id}`)}
       />
+      {schedule.fullSlots.length > 0 ? (
+        <ShiftSlotSection
+          label="24 Saat"
+          slots={schedule.fullSlots}
+          emptyText=""
+          compact={compact}
+          onGroupPress={(id) => router.push(`/(admin)/shifts/${id}`)}
+        />
+      ) : null}
 
       {!compact && schedule.offGroups.length > 0 ? (
         <View style={styles.offSection}>
           <Text style={styles.offTitle}>İzin günü</Text>
           {schedule.offGroups.map(({ group, personnel }) => (
-            <Text key={group.id} style={styles.offLine}>
-              {group.name}
-              {personnel.length > 0 ? ` (${personnel.length} personel)` : ''}
-            </Text>
+            <Pressable key={group.id} onPress={() => router.push(`/(admin)/shifts/${group.id}`)}>
+              <Text style={styles.offLine}>
+                {group.name}
+                {personnel.length > 0 ? ` (${personnel.length} personel)` : ''}
+              </Text>
+            </Pressable>
           ))}
         </View>
       ) : null}
@@ -63,54 +84,93 @@ export function UnitShiftScheduleCard({ schedule, compact, onPressDate }: UnitSh
   );
 }
 
-function ShiftSlotRow({
+function ShiftSlotSection({
   label,
-  slot,
+  slots,
   emptyText,
   compact,
   onGroupPress,
 }: {
   label: string;
-  slot: UnitDaySchedule['daySlot'];
+  slots: ShiftSlotAssignment[];
   emptyText: string;
   compact?: boolean;
   onGroupPress: (groupId: string) => void;
 }) {
-  const tone = slot?.shiftType === 'NIGHT' ? colors.primaryDark : modules.shifts.main;
-  const bg = slot?.shiftType === 'NIGHT' ? colors.primaryMuted : modules.shifts.light;
+  if (slots.length === 0) {
+    return (
+      <View style={[styles.slot, { backgroundColor: colors.surface, borderColor: colors.borderLight }]}>
+        <Text style={[styles.slotLabel, { color: colors.textMuted }]}>{label}</Text>
+        <Text style={styles.empty}>{emptyText}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <>
+      {slots.map((slot) => (
+        <ShiftSlotRow
+          key={slot.group.id}
+          label={label}
+          slot={slot}
+          compact={compact}
+          onGroupPress={onGroupPress}
+        />
+      ))}
+    </>
+  );
+}
+
+function ShiftSlotRow({
+  label,
+  slot,
+  compact,
+  onGroupPress,
+}: {
+  label: string;
+  slot: ShiftSlotAssignment;
+  compact?: boolean;
+  onGroupPress: (groupId: string) => void;
+}) {
+  const tone =
+    slot.shiftType === 'NIGHT'
+      ? colors.primaryDark
+      : slot.shiftType === 'FULL'
+        ? colors.warning
+        : modules.shifts.main;
+  const bg =
+    slot.shiftType === 'NIGHT'
+      ? colors.primaryMuted
+      : slot.shiftType === 'FULL'
+        ? colors.warningLight
+        : modules.shifts.light;
 
   return (
     <View style={[styles.slot, { backgroundColor: bg, borderColor: tone }]}>
       <View style={styles.slotHeader}>
         <Text style={[styles.slotLabel, { color: tone }]}>{label}</Text>
-        {slot ? (
-          <Text style={styles.slotTime}>{formatSlotLabel(slot.startTime, slot.endTime)}</Text>
-        ) : null}
+        <Text style={styles.slotTime}>
+          {formatSlotLabel(slot.startTime, slot.endTime, slot.shiftType)}
+        </Text>
       </View>
-      {slot ? (
-        <>
-          <Pressable onPress={() => onGroupPress(slot.group.id)} style={styles.groupRow}>
-            <ShiftBadge shiftType={slot.shiftType} />
-            <CardTitle>{slot.group.name}</CardTitle>
-          </Pressable>
-          {!compact ? (
-            slot.personnel.length === 0 ? (
-              <CardSubtitle>Personel atanmadı</CardSubtitle>
-            ) : (
-              <View style={styles.personnelList}>
-                {slot.personnel.map((p) => (
-                  <Text key={p.id} style={styles.personName}>
-                    · {getPersonnelFullName(p)}
-                  </Text>
-                ))}
-              </View>
-            )
-          ) : (
-            <CardSubtitle>{slot.personnel.length} personel</CardSubtitle>
-          )}
-        </>
+      <Pressable onPress={() => onGroupPress(slot.group.id)} style={styles.groupRow}>
+        <ShiftBadge shiftType={slot.shiftType} />
+        <CardTitle>{slot.group.name}</CardTitle>
+      </Pressable>
+      {!compact ? (
+        slot.personnel.length === 0 ? (
+          <CardSubtitle>Personel atanmadı</CardSubtitle>
+        ) : (
+          <View style={styles.personnelList}>
+            {slot.personnel.map((p) => (
+              <Text key={p.id} style={styles.personName}>
+                · {getPersonnelFullName(p)}
+              </Text>
+            ))}
+          </View>
+        )
       ) : (
-        <Text style={styles.empty}>{emptyText}</Text>
+        <CardSubtitle>{slot.personnel.length} personel</CardSubtitle>
       )}
     </View>
   );
@@ -126,6 +186,15 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   date: { ...typography.h3, color: colors.text, marginBottom: spacing.xs },
+  warningBox: {
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.warningLight,
+    borderWidth: 1,
+    borderColor: colors.warning,
+    gap: spacing.xs,
+  },
+  warningText: { ...typography.caption, color: colors.warning },
   slot: {
     padding: spacing.md,
     borderRadius: radius.md,

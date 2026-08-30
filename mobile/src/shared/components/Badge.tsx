@@ -27,9 +27,14 @@ export function StatusBadge({ status }: { status: 'ON_DUTY' | 'ON_ASSIGNMENT' | 
   return <Badge label={label} variant={variant} />;
 }
 
-export function ShiftBadge({ shiftType }: { shiftType: 'DAY' | 'NIGHT' | 'OFF' }) {
-  const labels = { DAY: 'Gündüz', NIGHT: 'Gece', OFF: 'İzin' };
-  const variants = { DAY: 'info' as const, NIGHT: 'default' as const, OFF: 'off' as const };
+export function ShiftBadge({ shiftType }: { shiftType: 'DAY' | 'NIGHT' | 'FULL' | 'OFF' }) {
+  const labels = { DAY: 'Gündüz', NIGHT: 'Gece', FULL: '24 Saat', OFF: 'İzin' };
+  const variants = {
+    DAY: 'info' as const,
+    NIGHT: 'default' as const,
+    FULL: 'warning' as const,
+    OFF: 'off' as const,
+  };
   return <Badge label={labels[shiftType]} variant={variants[shiftType]} />;
 }
 

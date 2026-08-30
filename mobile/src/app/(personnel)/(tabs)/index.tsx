@@ -35,18 +35,16 @@ export default function PersonnelHomeScreen() {
       if (shiftData) {
         todayShift = calculateShiftForDate(
           shiftData.patternDays,
-          shiftData.referenceDate,
+          shiftData.group.cycleStartDate,
           todayDateString(),
-          shiftData.group.cycleOffset,
         );
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
         const tomorrowStr = tomorrow.toISOString().slice(0, 10);
         tomorrowShift = calculateShiftForDate(
           shiftData.patternDays,
-          shiftData.referenceDate,
+          shiftData.group.cycleStartDate,
           tomorrowStr,
-          shiftData.group.cycleOffset,
         );
       }
       return { personnel, unit, shiftData, todayShift, tomorrowShift, taskAssignment };

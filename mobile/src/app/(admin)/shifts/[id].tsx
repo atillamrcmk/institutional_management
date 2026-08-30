@@ -3,7 +3,12 @@ import { ScrollView, View, Text, StyleSheet, Pressable, Alert } from 'react-nati
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepositories } from '@/shared/repositories';
-import { calculateShiftForDate, formatShiftTime, getShiftTypeLabel } from '@/features/shifts/engine/shiftCalculator';
+import { getUnitScheduleForDate } from '@/features/shifts/services/scheduleService';
+import {
+  calculateShiftForDate,
+  formatShiftTime,
+  getShiftTypeLabel,
+} from '@/features/shifts/engine/shiftCalculator';
 import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { ShiftBadge } from '@/shared/components/Badge';
 import { Button } from '@/shared/components/Button';
@@ -11,7 +16,13 @@ import { Input } from '@/shared/components/Input';
 import { LoadingState } from '@/shared/components/ErrorState';
 import type { ShiftPattern, ShiftPatternDay, Personnel } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
-import { formatDisplayDate, getPersonnelFullName, todayDateString } from '@/shared/utils/id';
+import {
+  addDaysToDateString,
+  formatDisplayDate,
+  getPersonnelFullName,
+  todayDateString,
+} from '@/shared/utils/id';
+import { invalidateShiftQueries } from '@/features/shifts/utils/invalidateShiftQueries';
 
 export default function ShiftDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -20,7 +31,7 @@ export default function ShiftDetailScreen() {
   const [selectedDate, setSelectedDate] = useState(todayDateString());
   const [editing, setEditing] = useState(false);
   const [groupName, setGroupName] = useState('');
-  const [cycleOffset, setCycleOffset] = useState(0);
+  const [cycleStartDate, setCycleStartDate] = useState(todayDateString());
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['shift-detail', id, selectedDate],
@@ -34,48 +45,31 @@ export default function ShiftDetailScreen() {
       const patterns = await repos.shifts.getPatterns(group.institutionId);
       const pattern = patterns.find((p: ShiftPattern) => p.id === group.patternId);
       const patternDays = await repos.shifts.getPatternDays(group.patternId);
+      const unitSchedule = await getUnitScheduleForDate(group.unitId, selectedDate);
 
-      const shift = pattern
-        ? calculateShiftForDate(
-            patternDays,
-            pattern.referenceDate,
-            selectedDate,
-            group.cycleOffset,
-          )
-        : null;
+      const shift = calculateShiftForDate(patternDays, group.cycleStartDate, selectedDate);
 
-      return { group, unit, personnel, pattern, patternDays, shift };
+      return { group, unit, personnel, pattern, patternDays, shift, unitSchedule };
     },
   });
 
   useEffect(() => {
     if (data?.group) {
       setGroupName(data.group.name);
-      setCycleOffset(data.group.cycleOffset ?? 0);
+      setCycleStartDate(data.group.cycleStartDate);
     }
   }, [data?.group]);
 
   const handleSaveGroup = async () => {
-    if (!groupName.trim()) return;
+    if (!groupName.trim() || !cycleStartDate.trim()) return;
     await getRepositories().shifts.updateGroup(id, {
       name: groupName.trim(),
-      cycleOffset,
+      cycleStartDate: cycleStartDate.trim(),
     });
     await refetch();
-    await queryClient.invalidateQueries({ queryKey: ['shifts-today'] });
-    await queryClient.invalidateQueries({ queryKey: ['presence'] });
+    await invalidateShiftQueries(queryClient, data?.group.unitId);
     setEditing(false);
     Alert.alert('Güncellendi');
-  };
-
-  const handleCycleOffsetChange = async (next: number) => {
-    const cycleLength = data?.patternDays.length ?? 1;
-    const normalized = ((next % cycleLength) + cycleLength) % cycleLength;
-    setCycleOffset(normalized);
-    await getRepositories().shifts.updateGroup(id, { cycleOffset: normalized });
-    await refetch();
-    await queryClient.invalidateQueries({ queryKey: ['shifts-today'] });
-    await queryClient.invalidateQueries({ queryKey: ['presence'] });
   };
 
   const handleRemovePersonnel = (personnel: Personnel) => {
@@ -100,7 +94,7 @@ export default function ShiftDetailScreen() {
         style: 'destructive',
         onPress: async () => {
           await getRepositories().shifts.deleteGroup(id);
-          await queryClient.invalidateQueries({ queryKey: ['shifts-today'] });
+          await invalidateShiftQueries(queryClient);
           router.back();
         },
       },
@@ -111,33 +105,57 @@ export default function ShiftDetailScreen() {
   if (!data?.group) {
     return (
       <View style={styles.center}>
-        <Text>Vardiya grubu bulunamadı</Text>
+        <Text>Vardiya bulunamadı</Text>
       </View>
     );
   }
 
-  const { group, unit, personnel, pattern, patternDays, shift } = data;
+  const { group, unit, personnel, pattern, patternDays, shift, unitSchedule } = data;
   const patternLabel = patternDays
     .sort((a: ShiftPatternDay, b: ShiftPatternDay) => a.dayIndex - b.dayIndex)
     .map((d: ShiftPatternDay) => getShiftTypeLabel(d.shiftType))
     .join(' → ');
 
+  const previewDates = Array.from({ length: 14 }, (_, i) =>
+    addDaysToDateString(group.cycleStartDate, i),
+  );
+
+  const handoverGroup =
+    shift?.shiftType === 'NIGHT'
+      ? unitSchedule?.daySlot?.group
+      : shift?.shiftType === 'DAY'
+        ? unitSchedule?.nightSlot?.group
+        : null;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {editing ? (
         <Card>
-          <Input label="Grup Adı" value={groupName} onChangeText={setGroupName} />
+          <Input label="Vardiya Adı" value={groupName} onChangeText={setGroupName} />
+          <Input
+            label="Referans Tarihi"
+            value={cycleStartDate}
+            onChangeText={setCycleStartDate}
+            hint="Bu vardiyanın döngüsünün 1. günü hangi tarihte başlıyor?"
+          />
           <View style={styles.row}>
             <Button title="Kaydet" onPress={handleSaveGroup} />
             <Button title="İptal" onPress={() => setEditing(false)} variant="outline" />
           </View>
         </Card>
       ) : (
-        <Text style={styles.title}>{unit?.name} · {group.name}</Text>
+        <Text style={styles.title}>
+          {unit?.name} · {group.name}
+        </Text>
       )}
 
       <View style={styles.actions}>
-        <Button title="Grubu Düzenle" onPress={() => setEditing(true)} variant="outline" />
+        <Button title="Düzenle" onPress={() => setEditing(true)} variant="outline" />
+        <Button
+          title="Birim Planı"
+          onPress={() => router.push(`/(admin)/units/${group.unitId}/schedule`)}
+          variant="outline"
+        />
         <Button title="+ Personel Ekle" onPress={() => router.push(`/(admin)/shifts/${id}/add-personnel`)} />
       </View>
 
@@ -146,11 +164,7 @@ export default function ShiftDetailScreen() {
           const date =
             tab === 'today'
               ? todayDateString()
-              : (() => {
-                  const d = new Date();
-                  d.setDate(d.getDate() + 1);
-                  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-                })();
+              : addDaysToDateString(todayDateString(), 1);
           return (
             <Pressable
               key={tab}
@@ -165,33 +179,41 @@ export default function ShiftDetailScreen() {
         })}
       </View>
 
-      {shift ? (
-        <Card>
-          <CardTitle>{formatDisplayDate(selectedDate)}</CardTitle>
-          <View style={styles.shiftRow}>
-            <ShiftBadge shiftType={shift.shiftType} />
-            <CardSubtitle>{formatShiftTime(shift.startTime, shift.endTime)}</CardSubtitle>
-          </View>
-        </Card>
-      ) : null}
+      <Card module="shifts" variant="tinted">
+        <CardTitle>{formatDisplayDate(selectedDate)}</CardTitle>
+        <View style={styles.shiftRow}>
+          <ShiftBadge shiftType={shift.shiftType} />
+          <CardSubtitle>{formatShiftTime(shift.startTime, shift.endTime)}</CardSubtitle>
+        </View>
+        {handoverGroup && handoverGroup.id !== group.id ? (
+          <Text style={styles.handover}>
+            {shift.shiftType === 'NIGHT' ? 'Gündüz devri: ' : 'Gece devri: '}
+            {handoverGroup.name}
+          </Text>
+        ) : null}
+      </Card>
 
       <Card>
-        <CardTitle>Döngü: {pattern?.name ?? '—'}</CardTitle>
-        <CardSubtitle>{patternLabel}</CardSubtitle>
-        <CardSubtitle>Referans: {pattern ? formatDisplayDate(pattern.referenceDate) : '—'}</CardSubtitle>
-        <View style={styles.offsetRow}>
-          <CardSubtitle>Döngü fazı: Gün {cycleOffset + 1}</CardSubtitle>
-          <View style={styles.offsetButtons}>
-            <Button title="−" variant="outline" onPress={() => handleCycleOffsetChange(cycleOffset - 1)} />
-            <Button title="+" variant="outline" onPress={() => handleCycleOffsetChange(cycleOffset + 1)} />
-          </View>
-        </View>
-        <Button
-          title="Döngüyü Düzenle"
-          variant="ghost"
-          onPress={() => pattern && router.push(`/(admin)/shifts/patterns/${pattern.id}`)}
-        />
+        <CardTitle>Döngü: {patternLabel}</CardTitle>
+        <CardSubtitle>Referans tarihi: {formatDisplayDate(group.cycleStartDate)}</CardSubtitle>
       </Card>
+
+      <Text style={styles.section}>14 Günlük Plan</Text>
+      {previewDates.map((date) => {
+        const dayShift = calculateShiftForDate(patternDays, group.cycleStartDate, date);
+        const isSelected = date === selectedDate;
+        return (
+          <Pressable key={date} onPress={() => setSelectedDate(date)}>
+            <View style={[styles.planRow, isSelected && styles.planRowActive]}>
+              <Text style={styles.planDate}>{formatDisplayDate(date)}</Text>
+              <Text style={styles.planShift}>
+                {getShiftTypeLabel(dayShift.shiftType)}
+                {dayShift.startTime ? ` · ${dayShift.startTime}–${dayShift.endTime}` : ''}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
 
       <Text style={styles.section}>Personel ({personnel.length})</Text>
       {personnel.map((p: Personnel) => (
@@ -206,7 +228,7 @@ export default function ShiftDetailScreen() {
         </Card>
       ))}
 
-      <Button title="Grubu Sil" onPress={handleDeleteGroup} variant="danger" />
+      <Button title="Vardiyayı Sil" onPress={handleDeleteGroup} variant="danger" />
     </ScrollView>
   );
 }
@@ -231,17 +253,22 @@ const styles = StyleSheet.create({
   tabText: { ...typography.label, color: colors.text },
   tabTextActive: { color: '#fff' },
   shiftRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.sm },
+  handover: { marginTop: spacing.sm, color: colors.textSecondary },
   section: { ...typography.h3, color: colors.text },
+  planRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderLight,
+    backgroundColor: colors.surface,
+  },
+  planRowActive: { backgroundColor: colors.primaryMuted },
+  planDate: { ...typography.bodySmall, color: colors.text },
+  planShift: { ...typography.bodySmall, color: colors.primary, fontWeight: '600' },
   personCard: { marginBottom: spacing.xs },
   personRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   personInfo: { flex: 1 },
   row: { flexDirection: 'row', gap: spacing.sm },
-  offsetRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-    marginTop: spacing.xs,
-  },
-  offsetButtons: { flexDirection: 'row', gap: spacing.xs },
 });

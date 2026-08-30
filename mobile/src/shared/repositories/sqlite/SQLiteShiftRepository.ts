@@ -9,7 +9,7 @@ import type {
 } from '@/shared/types';
 import type { ShiftRepository } from '../interfaces';
 import { calculateShiftForDate } from '@/features/shifts/engine/shiftCalculator';
-import { generateId, nowIso } from '@/shared/utils/id';
+import { generateId, nowIso, addDaysToDateString, todayDateString } from '@/shared/utils/id';
 
 function mapPattern(row: Record<string, unknown>): ShiftPattern {
   return {
@@ -40,6 +40,7 @@ function mapGroup(row: Record<string, unknown>): ShiftGroup {
     unitId: row.unit_id as string,
     name: row.name as string,
     patternId: row.pattern_id as string,
+    cycleStartDate: (row.cycle_start_date as string) || todayDateString(),
     cycleOffset: (row.cycle_offset as number) ?? 0,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -223,7 +224,7 @@ export class SQLiteShiftRepository implements ShiftRepository {
     unitId: string,
     name: string,
     patternId: string,
-    cycleOffset?: number,
+    cycleStartDate?: string,
   ): Promise<ShiftGroup> {
     const unit = await this.db.getFirstAsync<Record<string, unknown>>(
       'SELECT institution_id FROM units WHERE id = ?',
@@ -231,21 +232,31 @@ export class SQLiteShiftRepository implements ShiftRepository {
     );
     if (!unit) throw new Error('Birim bulunamadı');
 
-    const resolvedOffset =
-      cycleOffset ??
-      (await this.getSuggestedCycleOffset(unitId, patternId));
+    const resolvedStartDate =
+      cycleStartDate ?? (await this.getSuggestedCycleStartDate(unitId, patternId));
+
+    const pattern = await this.getPatternById(patternId);
+    const patternDays = await this.getPatternDays(patternId);
+    const cycleLength = Math.max(patternDays.length, 1);
+    const offset =
+      pattern != null
+        ? ((daysBetweenForRepo(pattern.referenceDate, resolvedStartDate) % cycleLength) +
+            cycleLength) %
+          cycleLength
+        : 0;
 
     const id = generateId();
     const ts = nowIso();
     await this.db.runAsync(
-      `INSERT INTO shift_groups (id, institution_id, unit_id, name, pattern_id, cycle_offset, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO shift_groups (id, institution_id, unit_id, name, pattern_id, cycle_offset, cycle_start_date, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       unit.institution_id as string,
       unitId,
       name,
       patternId,
-      resolvedOffset,
+      offset,
+      resolvedStartDate,
       ts,
       ts,
     );
@@ -255,30 +266,52 @@ export class SQLiteShiftRepository implements ShiftRepository {
     return group;
   }
 
-  async getSuggestedCycleOffset(unitId: string, patternId: string): Promise<number> {
+  async getSuggestedCycleStartDate(unitId: string, patternId: string): Promise<string> {
+    const pattern = await this.getPatternById(patternId);
     const patternDays = await this.getPatternDays(patternId);
     const cycleLength = Math.max(patternDays.length, 1);
-    const row = await this.db.getFirstAsync<{ count: number }>(
-      `SELECT COUNT(*) as count FROM shift_groups WHERE unit_id = ? AND pattern_id = ?`,
+
+    const row = await this.db.getFirstAsync<{ cycle_start_date: string }>(
+      `SELECT cycle_start_date FROM shift_groups
+       WHERE unit_id = ? AND pattern_id = ? AND cycle_start_date IS NOT NULL
+       ORDER BY cycle_start_date DESC LIMIT 1`,
       unitId,
       patternId,
     );
-    return (row?.count ?? 0) % cycleLength;
+
+    if (!row?.cycle_start_date) {
+      return pattern?.referenceDate ?? todayDateString();
+    }
+
+    return addDaysToDateString(row.cycle_start_date, cycleLength);
   }
 
   async updateGroup(
     id: string,
-    input: { name?: string; patternId?: string; cycleOffset?: number },
+    input: { name?: string; patternId?: string; cycleStartDate?: string },
   ): Promise<ShiftGroup> {
     const existing = await this.getGroupById(id);
     if (!existing) throw new Error('Vardiya grubu bulunamadı');
 
+    const patternId = input.patternId ?? existing.patternId;
+    const cycleStartDate = input.cycleStartDate ?? existing.cycleStartDate;
+    const pattern = await this.getPatternById(patternId);
+    const patternDays = await this.getPatternDays(patternId);
+    const cycleLength = Math.max(patternDays.length, 1);
+    const offset =
+      pattern != null
+        ? ((daysBetweenForRepo(pattern.referenceDate, cycleStartDate) % cycleLength) +
+            cycleLength) %
+          cycleLength
+        : existing.cycleOffset;
+
     const ts = nowIso();
     await this.db.runAsync(
-      `UPDATE shift_groups SET name = ?, pattern_id = ?, cycle_offset = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE shift_groups SET name = ?, pattern_id = ?, cycle_offset = ?, cycle_start_date = ?, updated_at = ? WHERE id = ?`,
       input.name ?? existing.name,
-      input.patternId ?? existing.patternId,
-      input.cycleOffset ?? existing.cycleOffset,
+      patternId,
+      offset,
+      cycleStartDate,
       ts,
       id,
     );
@@ -414,12 +447,7 @@ export class SQLiteShiftRepository implements ShiftRepository {
       if (!pattern) continue;
 
       const patternDays = await this.getPatternDays(group.patternId);
-      const shift = calculateShiftForDate(
-        patternDays,
-        pattern.reference_date as string,
-        date,
-        group.cycleOffset,
-      );
+      const shift = calculateShiftForDate(patternDays, group.cycleStartDate, date);
       const personnel = await this.getPersonnelInGroup(group.id);
 
       results.push({
@@ -432,4 +460,12 @@ export class SQLiteShiftRepository implements ShiftRepository {
 
     return results;
   }
+}
+
+function daysBetweenForRepo(from: string, to: string): number {
+  const fromParts = from.split('-').map(Number);
+  const toParts = to.split('-').map(Number);
+  const fromUtc = Date.UTC(fromParts[0], fromParts[1] - 1, fromParts[2]);
+  const toUtc = Date.UTC(toParts[0], toParts[1] - 1, toParts[2]);
+  return Math.round((toUtc - fromUtc) / (1000 * 60 * 60 * 24));
 }

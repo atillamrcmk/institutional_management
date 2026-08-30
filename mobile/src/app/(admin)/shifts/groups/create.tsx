@@ -1,68 +1,61 @@
-import { useState, useEffect } from 'react';
-import { ScrollView, StyleSheet, Alert, Pressable, Text, View } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, Alert, Text, View } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepositories } from '@/shared/repositories';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
 import { calculateShiftForDate, getShiftTypeLabel } from '@/features/shifts/engine/shiftCalculator';
+import {
+  addShiftGroupToUnit,
+  getUnitPatternId,
+} from '@/features/shifts/services/unitSetupService';
+import { invalidateShiftQueries } from '@/features/shifts/utils/invalidateShiftQueries';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
-import type { ShiftPattern, ShiftPatternDay } from '@/shared/types';
+import type { ShiftPatternDay } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
-import { formatDisplayDate } from '@/shared/utils/id';
+import { formatDisplayDate, todayDateString } from '@/shared/utils/id';
+
+function resolveUnitId(unitId: string | string[] | undefined): string | undefined {
+  if (Array.isArray(unitId)) return unitId[0];
+  return unitId;
+}
 
 export default function CreateShiftGroupScreen() {
-  const { unitId } = useLocalSearchParams<{ unitId: string }>();
+  const params = useLocalSearchParams<{ unitId?: string | string[] }>();
+  const unitId = resolveUnitId(params.unitId);
   const router = useRouter();
-  const institutionId = useInstitutionId();
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
-  const [patternId, setPatternId] = useState<string | null>(null);
-  const [cycleOffset, setCycleOffset] = useState(0);
+  const [referenceDate, setReferenceDate] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const { data: patterns, isLoading } = useQuery({
-    queryKey: ['shift-patterns', institutionId],
-    queryFn: () => getRepositories().shifts.getPatterns(institutionId!),
-    enabled: !!institutionId,
+  const { data, isLoading } = useQuery({
+    queryKey: ['shift-add-group', unitId],
+    queryFn: async () => {
+      const repos = getRepositories();
+      const unit = unitId ? await repos.units.getById(unitId) : null;
+      const patternId = unitId ? await getUnitPatternId(unitId) : null;
+      const patternDays = patternId ? await repos.shifts.getPatternDays(patternId) : [];
+      return { unit, patternId, patternDays };
+    },
+    enabled: !!unitId,
   });
-
-  const { data: patternDays } = useQuery({
-    queryKey: ['shift-pattern-days', patternId],
-    queryFn: () => getRepositories().shifts.getPatternDays(patternId!),
-    enabled: !!patternId,
-  });
-
-  const selectedPattern = patterns?.find((p: ShiftPattern) => p.id === patternId) ?? null;
-
-  useEffect(() => {
-    if (!patternId || !unitId) return;
-    getRepositories()
-      .shifts.getSuggestedCycleOffset(unitId, patternId)
-      .then(setCycleOffset)
-      .catch(() => setCycleOffset(0));
-  }, [patternId, unitId]);
-
-  const cycleLength = patternDays?.length ?? 1;
 
   const handleSave = async () => {
-    if (!name.trim() || !patternId) {
-      Alert.alert('Eksik bilgi', 'Grup adı ve döngü seçimi zorunludur.');
+    if (!unitId || !name.trim() || !referenceDate.trim()) {
+      Alert.alert('Eksik bilgi', 'Vardiya adı ve referans tarihi zorunludur.');
       return;
     }
     setSaving(true);
     try {
-      const group = await getRepositories().shifts.createGroup(
-        unitId,
-        name.trim(),
-        patternId,
-        cycleOffset,
-      );
-      await queryClient.invalidateQueries({ queryKey: ['unit-detail', unitId] });
-      await queryClient.invalidateQueries({ queryKey: ['shifts-today'] });
-      Alert.alert('Başarılı', 'Vardiya grubu oluşturuldu.', [
+      const group = await addShiftGroupToUnit(unitId, {
+        name: name.trim(),
+        referenceDate: referenceDate.trim(),
+      });
+      await invalidateShiftQueries(queryClient, unitId);
+      Alert.alert('Başarılı', 'Vardiya eklendi.', [
         { text: 'Tamam', onPress: () => router.replace(`/(admin)/shifts/${group.id}`) },
       ]);
     } catch (e) {
@@ -72,90 +65,55 @@ export default function CreateShiftGroupScreen() {
     }
   };
 
+  if (!unitId) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>Birim bulunamadı.</Text>
+        <Button title="Geri" onPress={() => router.back()} />
+      </View>
+    );
+  }
+
   if (isLoading) return <LoadingState />;
 
+  if (!data?.patternId) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.error}>Önce "Vardiya Kur" ile döngü ve ilk vardiyaları oluşturun.</Text>
+        <Button title="Geri" onPress={() => router.back()} />
+      </View>
+    );
+  }
+
+  const today = todayDateString();
   const previewShift =
-    selectedPattern && patternDays?.length
-      ? calculateShiftForDate(
-          patternDays,
-          selectedPattern.referenceDate,
-          selectedPattern.referenceDate,
-          cycleOffset,
-        )
+    referenceDate.trim() && data.patternDays.length > 0
+      ? calculateShiftForDate(data.patternDays as ShiftPatternDay[], referenceDate.trim(), today)
       : null;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Input label="Grup Adı *" value={name} onChangeText={setName} placeholder="A Vardiyası" />
-      <Text style={styles.label}>Vardiya Döngüsü *</Text>
-      {patterns?.length === 0 ? (
-        <Text style={styles.hint}>Önce vardiya döngüsü oluşturun.</Text>
-      ) : (
-        patterns?.map((pattern: ShiftPattern) => (
-          <Pressable
-            key={pattern.id}
-            onPress={() => setPatternId(pattern.id)}
-            style={[styles.chip, patternId === pattern.id && styles.chipActive]}
-          >
-            <Text style={[styles.chipText, patternId === pattern.id && styles.chipTextActive]}>
-              {pattern.name}
-            </Text>
-          </Pressable>
-        ))
-      )}
+      <Text style={styles.subtitle}>{data.unit?.name} birimine yeni vardiya</Text>
+      <Input label="Vardiya Adı *" value={name} onChangeText={setName} placeholder="E Vardiyası" />
+      <Input
+        label="Referans Tarihi *"
+        value={referenceDate}
+        onChangeText={setReferenceDate}
+        placeholder="2026-08-31"
+        hint="Bu vardiyanın döngüsünün 1. günü hangi tarihte başlıyor?"
+      />
 
-      {selectedPattern && patternDays?.length ? (
-        <View style={styles.offsetBox}>
-          <Text style={styles.label}>Döngü Fazı (Kayma)</Text>
-          <Text style={styles.hint}>
-            Aynı döngüyü kullanan her yeni grup bir sonraki faza otomatik kayar. Böylece A gece
-            çalışırken B gündüz çalışabilir.
+      {previewShift ? (
+        <View style={styles.previewBox}>
+          <Text style={styles.previewTitle}>Bugün önizleme ({formatDisplayDate(today)})</Text>
+          <Text style={styles.previewShift}>
+            {getShiftTypeLabel(previewShift.shiftType)}
+            {previewShift.startTime ? ` · ${previewShift.startTime}–${previewShift.endTime}` : ''}
           </Text>
-          <View style={styles.offsetControls}>
-            <Button
-              title="−"
-              onPress={() => setCycleOffset((v) => (v - 1 + cycleLength) % cycleLength)}
-              variant="outline"
-            />
-            <Text style={styles.offsetValue}>
-              Gün {cycleOffset + 1} / {cycleLength}
-            </Text>
-            <Button
-              title="+"
-              onPress={() => setCycleOffset((v) => (v + 1) % cycleLength)}
-              variant="outline"
-            />
-          </View>
-          <Text style={styles.previewLabel}>
-            Referans tarihinde ({formatDisplayDate(selectedPattern.referenceDate)}):
-          </Text>
-          <Text style={styles.preview}>
-            {previewShift
-              ? `${getShiftTypeLabel(previewShift.shiftType)}${
-                  previewShift.startTime
-                    ? ` · ${previewShift.startTime} – ${previewShift.endTime}`
-                    : ''
-                }`
-              : '—'}
-          </Text>
-          <View style={styles.cyclePreview}>
-            {[...(patternDays as ShiftPatternDay[])]
-              .sort((a, b) => a.dayIndex - b.dayIndex)
-              .map((day, index) => (
-                <View
-                  key={day.id}
-                  style={[styles.cycleDay, index === cycleOffset && styles.cycleDayActive]}
-                >
-                  <Text style={[styles.cycleDayText, index === cycleOffset && styles.cycleDayTextActive]}>
-                    {getShiftTypeLabel(day.shiftType)}
-                  </Text>
-                </View>
-              ))}
-          </View>
         </View>
       ) : null}
 
-      <Button title="Kaydet" onPress={handleSave} loading={saving} disabled={!patterns?.length} />
+      <Button title="Kaydet" onPress={handleSave} loading={saving} />
     </ScrollView>
   );
 }
@@ -163,48 +121,15 @@ export default function CreateShiftGroupScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
-  label: { ...typography.label, color: colors.textSecondary },
-  hint: { ...typography.bodySmall, color: colors.textMuted },
-  chip: {
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: spacing.md, gap: spacing.md },
+  error: { ...typography.body, color: colors.danger, textAlign: 'center' },
+  subtitle: { ...typography.bodySmall, color: colors.textMuted },
+  previewBox: {
     padding: spacing.md,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  chipActive: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
-  chipText: { ...typography.body, color: colors.text },
-  chipTextActive: { color: colors.primary, fontWeight: '600' },
-  offsetBox: {
-    gap: spacing.sm,
-    padding: spacing.md,
-    borderRadius: 12,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  offsetControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  offsetValue: { ...typography.h3, color: colors.text, minWidth: 100, textAlign: 'center' },
-  previewLabel: { ...typography.caption, color: colors.textMuted },
-  preview: { ...typography.body, color: colors.text, fontWeight: '600' },
-  cyclePreview: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  cycleDay: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  cycleDayActive: {
-    borderColor: colors.primary,
     backgroundColor: colors.primaryMuted,
+    gap: spacing.xs,
   },
-  cycleDayText: { ...typography.caption, color: colors.textSecondary },
-  cycleDayTextActive: { color: colors.primary, fontWeight: '700' },
+  previewTitle: { ...typography.caption, color: colors.textSecondary },
+  previewShift: { ...typography.body, color: colors.primary, fontWeight: '600' },
 });

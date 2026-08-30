@@ -63,12 +63,12 @@ export interface ShiftRepository {
     unitId: string,
     name: string,
     patternId: string,
-    cycleOffset?: number,
+    cycleStartDate?: string,
   ): Promise<ShiftGroup>;
-  getSuggestedCycleOffset(unitId: string, patternId: string): Promise<number>;
+  getSuggestedCycleStartDate(unitId: string, patternId: string): Promise<string>;
   updateGroup(
     id: string,
-    input: { name?: string; patternId?: string; cycleOffset?: number },
+    input: { name?: string; patternId?: string; cycleStartDate?: string },
   ): Promise<ShiftGroup>;
   deleteGroup(id: string): Promise<void>;
   assignPersonnelToGroup(personnelId: string, shiftGroupId: string): Promise<PersonnelShiftAssignment>;

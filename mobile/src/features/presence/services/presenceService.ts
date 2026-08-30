@@ -34,12 +34,7 @@ export async function getPresenceForDate(
     let shiftGroup: ShiftGroup | null = null;
 
     if (shiftData) {
-      shift = calculateShiftForDate(
-        shiftData.patternDays,
-        shiftData.referenceDate,
-        date,
-        shiftData.group.cycleOffset,
-      );
+      shift = calculateShiftForDate(shiftData.patternDays, shiftData.group.cycleStartDate, date);
       shiftGroup = shiftData.group;
     }
 

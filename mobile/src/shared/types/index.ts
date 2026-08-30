@@ -2,7 +2,7 @@ export type UserRole = 'INSTITUTION_ADMIN' | 'UNIT_MANAGER' | 'PERSONNEL';
 
 export type PersonnelStatus = 'ACTIVE' | 'INACTIVE';
 
-export type ShiftType = 'DAY' | 'NIGHT' | 'OFF';
+export type ShiftType = 'DAY' | 'NIGHT' | 'FULL' | 'OFF';
 
 export type AbsenceType = 'LEAVE' | 'REPORT' | 'TRAINING' | 'TEMPORARY_DUTY';
 
@@ -82,7 +82,9 @@ export interface ShiftGroup {
   unitId: string;
   name: string;
   patternId: string;
-  /** Days to shift this group's position in the shared pattern cycle (0 = aligned with reference date). */
+  /** First calendar day of this group's rotation (day index 0 of the pattern). */
+  cycleStartDate: string;
+  /** @deprecated Use cycleStartDate. Kept for migration compatibility. */
   cycleOffset: number;
   createdAt: string;
   updatedAt: string;

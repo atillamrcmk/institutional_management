@@ -119,7 +119,46 @@ export class SQLiteUnitRepository implements UnitRepository {
   }
 
   async delete(id: string): Promise<void> {
-    await this.db.runAsync('DELETE FROM units WHERE id = ?', id);
+    const existing = await this.getById(id);
+    if (!existing) throw new Error('Birim bulunamadı');
+
+    const childCount = await this.db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) as count FROM units WHERE parent_id = ?',
+      id,
+    );
+    if ((childCount?.count ?? 0) > 0) {
+      throw new Error('Bu birimin alt birimleri var. Önce alt birimleri silin.');
+    }
+
+    await this.db.withTransactionAsync(async () => {
+      const groups = await this.db.getAllAsync<{ id: string; pattern_id: string }>(
+        'SELECT id, pattern_id FROM shift_groups WHERE unit_id = ?',
+        id,
+      );
+      const patternIds = [...new Set(groups.map((g) => g.pattern_id))];
+
+      for (const group of groups) {
+        await this.db.runAsync(
+          'DELETE FROM personnel_shift_assignments WHERE shift_group_id = ?',
+          group.id,
+        );
+        await this.db.runAsync('DELETE FROM shift_groups WHERE id = ?', group.id);
+      }
+
+      for (const patternId of patternIds) {
+        const remaining = await this.db.getFirstAsync<{ count: number }>(
+          'SELECT COUNT(*) as count FROM shift_groups WHERE pattern_id = ?',
+          patternId,
+        );
+        if ((remaining?.count ?? 0) === 0) {
+          await this.db.runAsync('DELETE FROM shift_pattern_days WHERE pattern_id = ?', patternId);
+          await this.db.runAsync('DELETE FROM shift_patterns WHERE id = ?', patternId);
+        }
+      }
+
+      await this.db.runAsync('DELETE FROM personnel_unit_history WHERE unit_id = ?', id);
+      await this.db.runAsync('DELETE FROM units WHERE id = ?', id);
+    });
   }
 
   async assignPersonnel(unitId: string, personnelId: string): Promise<PersonnelUnitHistory> {

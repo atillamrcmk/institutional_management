@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getRepositories } from '@/shared/repositories';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
+import { invalidateShiftQueries } from '@/features/shifts/utils/invalidateShiftQueries';
 import { Input } from '@/shared/components/Input';
 import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { Button } from '@/shared/components/Button';
@@ -22,12 +23,27 @@ export default function AddPersonnelToShiftGroupScreen() {
     queryKey: ['shift-add-personnel', groupId, search],
     queryFn: async () => {
       const repos = getRepositories();
+      const group = await repos.shifts.getGroupById(groupId);
+      if (!group) return { candidates: [], unitName: '' };
+
+      const unit = await repos.units.getById(group.unitId);
       const inGroup = await repos.shifts.getPersonnelInGroup(groupId);
       const inGroupIds = new Set(inGroup.map((p) => p.id));
-      const all = search.trim()
-        ? await repos.personnel.search(institutionId!, search)
-        : await repos.personnel.getAll(institutionId!);
-      return all.filter((p) => !inGroupIds.has(p.id));
+
+      const unitPersonnel = await repos.units.getActivePersonnelForUnit(group.unitId);
+      const filtered = unitPersonnel.filter((p) => !inGroupIds.has(p.id));
+
+      const q = search.trim().toLowerCase();
+      const candidates = q
+        ? filtered.filter(
+            (p) =>
+              p.firstName.toLowerCase().includes(q) ||
+              p.lastName.toLowerCase().includes(q) ||
+              p.sicilNo.toLowerCase().includes(q),
+          )
+        : filtered;
+
+      return { candidates, unitName: unit?.name ?? '' };
     },
     enabled: !!institutionId && !!groupId,
   });
@@ -36,7 +52,9 @@ export default function AddPersonnelToShiftGroupScreen() {
     try {
       await getRepositories().shifts.assignPersonnelToGroup(personnelId, groupId);
       await queryClient.invalidateQueries({ queryKey: ['shift-detail', groupId] });
-      Alert.alert('Başarılı', 'Personel vardiya grubuna eklendi.');
+      await queryClient.invalidateQueries({ queryKey: ['unit-detail'] });
+      await invalidateShiftQueries(queryClient);
+      Alert.alert('Başarılı', 'Personel vardiyaya eklendi.');
     } catch (e) {
       Alert.alert('Hata', e instanceof Error ? e.message : 'Atama başarısız.');
     }
@@ -46,20 +64,33 @@ export default function AddPersonnelToShiftGroupScreen() {
 
   return (
     <View style={styles.container}>
-      <Input placeholder="Personel ara..." value={search} onChangeText={setSearch} style={styles.search} />
+      <Input
+        placeholder="Birim personeli ara..."
+        value={search}
+        onChangeText={setSearch}
+        style={styles.search}
+      />
       <FlatList
-        data={data}
+        data={data?.candidates}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
+        ListEmptyComponent={
+          <Card style={styles.emptyCard}>
+            <CardTitle>Atanacak personel yok</CardTitle>
+            <CardSubtitle>
+              Önce {data?.unitName ? `"${data.unitName}"` : 'bu'} birime personel ekleyin.
+            </CardSubtitle>
+            <Button title="Geri" onPress={() => router.back()} variant="outline" />
+          </Card>
+        }
         renderItem={({ item }) => (
           <Card style={styles.card}>
             <CardTitle>{getPersonnelFullName(item)}</CardTitle>
             <CardSubtitle>{item.sicilNo}</CardSubtitle>
-            <Button title="Gruba Ekle" onPress={() => handleAssign(item.id)} />
+            <Button title="Vardiyaya Ekle" onPress={() => handleAssign(item.id)} />
           </Card>
         )}
       />
-      <Button title="Geri" onPress={() => router.back()} variant="ghost" style={styles.back} />
     </View>
   );
 }
@@ -69,5 +100,5 @@ const styles = StyleSheet.create({
   search: { margin: spacing.md },
   list: { padding: spacing.md, paddingTop: 0, gap: spacing.sm },
   card: { marginBottom: spacing.sm, gap: spacing.sm },
-  back: { margin: spacing.md },
+  emptyCard: { gap: spacing.sm, padding: spacing.md },
 });

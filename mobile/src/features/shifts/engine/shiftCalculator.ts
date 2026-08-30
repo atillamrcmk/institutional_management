@@ -1,10 +1,13 @@
 import type { CalculatedShift, ShiftPatternDay, ShiftType } from '@/shared/types';
 
+/**
+ * Calculates which pattern day applies to a shift group on targetDate.
+ * cycleStartDate = the date when day index 0 of the pattern begins for this group.
+ */
 export function calculateShiftForDate(
   patternDays: ShiftPatternDay[],
-  referenceDate: string,
+  cycleStartDate: string,
   targetDate: string,
-  cycleOffset: number = 0,
 ): CalculatedShift {
   if (patternDays.length === 0) {
     return {
@@ -18,7 +21,7 @@ export function calculateShiftForDate(
 
   const sorted = [...patternDays].sort((a, b) => a.dayIndex - b.dayIndex);
   const cycleLength = sorted.length;
-  const dayOffset = daysBetweenDates(referenceDate, targetDate) + cycleOffset;
+  const dayOffset = daysBetweenDates(cycleStartDate, targetDate);
   const normalizedOffset = ((dayOffset % cycleLength) + cycleLength) % cycleLength;
   const patternDay = sorted.find((d) => d.dayIndex === normalizedOffset) ?? sorted[0];
 
@@ -40,7 +43,7 @@ export function daysBetweenDates(from: string, to: string): number {
 }
 
 export function isWorkingShift(shiftType: ShiftType): boolean {
-  return shiftType === 'DAY' || shiftType === 'NIGHT';
+  return shiftType === 'DAY' || shiftType === 'NIGHT' || shiftType === 'FULL';
 }
 
 export function formatShiftTime(start: string | null, end: string | null): string {
@@ -54,6 +57,8 @@ export function getShiftTypeLabel(shiftType: ShiftType): string {
       return 'Gündüz';
     case 'NIGHT':
       return 'Gece';
+    case 'FULL':
+      return '24 Saat';
     case 'OFF':
       return 'İzin';
   }

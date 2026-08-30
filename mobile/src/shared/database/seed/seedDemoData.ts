@@ -1,5 +1,12 @@
 import { getRepositories } from '@/shared/repositories';
 import {
+  PRESET_CYCLE_4_DAY,
+  PRESET_CYCLE_MERKEZ,
+} from '@/features/shifts/constants/shiftDefaults';
+import {
+  setupUnitShiftRotation,
+} from '@/features/shifts/services/unitSetupService';
+import {
   addDaysToDateString,
   todayDateString,
 } from '@/shared/utils/id';
@@ -13,6 +20,17 @@ import {
 } from './seedRandom';
 
 const PERSONNEL_COUNT = 90;
+
+async function assignPersonnelToGroupsEvenly(
+  personnelIds: string[],
+  groupIds: string[],
+): Promise<void> {
+  const repos = getRepositories();
+  for (let i = 0; i < personnelIds.length; i++) {
+    const groupId = groupIds[i % groupIds.length];
+    await repos.shifts.assignPersonnelToGroup(personnelIds[i], groupId);
+  }
+}
 
 export async function seedDemoData(): Promise<{ institutionId: string }> {
   const repos = getRepositories();
@@ -41,44 +59,28 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
   await repos.units.create(institutionId, { name: 'Ziyaret', parentId: guvenlik.id, minimumStaff: 2 });
   await repos.units.create(institutionId, { name: 'İdari Birim' });
 
-  const maltaPattern = await repos.shifts.createPattern(
-    institutionId,
-    'Malta 4 Günlük Döngü',
-    today,
-    [
-      { shiftType: 'DAY', startTime: '08:00', endTime: '20:00' },
-      { shiftType: 'NIGHT', startTime: '20:00', endTime: '08:00' },
-      { shiftType: 'OFF' },
-      { shiftType: 'OFF' },
+  const maltaGroups = await setupUnitShiftRotation(malta.id, institutionId, {
+    days: PRESET_CYCLE_4_DAY,
+    groups: [
+      { name: 'A Vardiyası', referenceDate: today },
+      { name: 'B Vardiyası', referenceDate: addDaysToDateString(today, 1) },
+      { name: 'C Vardiyası', referenceDate: addDaysToDateString(today, 2) },
+      { name: 'D Vardiyası', referenceDate: addDaysToDateString(today, 3) },
     ],
-  );
+  });
 
-  const merkezPattern = await repos.shifts.createPattern(
-    institutionId,
-    'Merkez 4 Günlük Döngü',
-    today,
-    [
-      { shiftType: 'DAY', startTime: '08:00', endTime: '20:00' },
-      { shiftType: 'NIGHT', startTime: '20:00', endTime: '08:00' },
-      { shiftType: 'OFF' },
-      { shiftType: 'OFF' },
+  const merkezGroups = await setupUnitShiftRotation(merkezKontrol.id, institutionId, {
+    days: PRESET_CYCLE_MERKEZ,
+    groups: [
+      { name: 'A Vardiyası', referenceDate: '2026-08-27' },
+      { name: 'B Vardiyası', referenceDate: '2026-08-31' },
+      { name: 'C Vardiyası', referenceDate: '2026-09-04' },
+      { name: 'D Vardiyası', referenceDate: '2026-08-29' },
     ],
-  );
+  });
 
-  const maltaGroups = await Promise.all(
-    ['A', 'B', 'C', 'D'].map((name, index) =>
-      repos.shifts.createGroup(malta.id, `${name} Vardiyası`, maltaPattern.id, index),
-    ),
-  );
-
-  const merkezGroups = await Promise.all(
-    ['A', 'B', 'C', 'D'].map((name, index) =>
-      repos.shifts.createGroup(merkezKontrol.id, `${name} Vardiyası`, merkezPattern.id, index),
-    ),
-  );
-  const merkezGroup = merkezGroups[0];
-
-  const unitsForAssignment = [malta, merkezKontrol, nizamiye];
+  const maltaPersonnelIds: string[] = [];
+  const merkezPersonnelIds: string[] = [];
   const createdPersonnel: string[] = [];
 
   for (let i = 0; i < PERSONNEL_COUNT; i++) {
@@ -90,16 +92,25 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     });
     createdPersonnel.push(personnel.id);
 
-    const unit = unitsForAssignment[i % unitsForAssignment.length];
-    await repos.units.assignPersonnel(unit.id, personnel.id);
-
-    const group = maltaGroups[i % maltaGroups.length];
-    if (i < 70) {
-      await repos.shifts.assignPersonnelToGroup(personnel.id, group.id);
-    } else if (i < 82) {
-      await repos.shifts.assignPersonnelToGroup(personnel.id, merkezGroup.id);
+    if (i < 50) {
+      await repos.units.assignPersonnel(malta.id, personnel.id);
+      maltaPersonnelIds.push(personnel.id);
+    } else if (i < 70) {
+      await repos.units.assignPersonnel(merkezKontrol.id, personnel.id);
+      merkezPersonnelIds.push(personnel.id);
+    } else {
+      await repos.units.assignPersonnel(nizamiye.id, personnel.id);
     }
   }
+
+  await assignPersonnelToGroupsEvenly(
+    maltaPersonnelIds,
+    maltaGroups.map((g) => g.id),
+  );
+  await assignPersonnelToGroupsEvenly(
+    merkezPersonnelIds,
+    merkezGroups.map((g) => g.id),
+  );
 
   const absentIndices = seedAbsentIndices(PERSONNEL_COUNT, 8);
   for (const idx of absentIndices) {
@@ -171,7 +182,7 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     endTime: '16:00',
     requiredPersonnelCount: 2,
     managerPersonnelId: managerPersonnel.id,
-    personnelIds: [createdPersonnel[0], createdPersonnel[1]],
+    personnelIds: [createdPersonnel[50], createdPersonnel[51]],
   });
   await repos.assignments.create(institutionId, {
     taskTypeId: taskEmir.id,
@@ -180,7 +191,7 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     startTime: '10:00',
     endTime: '14:00',
     requiredPersonnelCount: 1,
-    personnelIds: [createdPersonnel[2]],
+    personnelIds: [createdPersonnel[70]],
   });
   await repos.assignments.create(institutionId, {
     taskTypeId: taskGorev.id,
@@ -189,7 +200,7 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     startTime: '19:00',
     endTime: '23:00',
     requiredPersonnelCount: 3,
-    personnelIds: [createdPersonnel[3], createdPersonnel[4], createdPersonnel[5]],
+    personnelIds: [createdPersonnel[0], createdPersonnel[1], createdPersonnel[2]],
   });
 
   await repos.institution.persist();

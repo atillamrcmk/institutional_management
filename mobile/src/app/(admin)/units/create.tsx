@@ -59,6 +59,9 @@ export default function CreateUnitScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Input label="Birim Adı *" value={name} onChangeText={setName} placeholder="Malta" />
+      <Text style={styles.hint}>
+        Birim oluşturduktan sonra vardiyaları kurup personel ekleyebilirsiniz.
+      </Text>
       <Input
         label="Minimum Kadro"
         value={minimumStaff}
@@ -92,6 +95,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
   label: { ...typography.label, color: colors.textSecondary },
+  hint: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.xs },
   chip: {
     padding: spacing.md,
     borderRadius: 12,

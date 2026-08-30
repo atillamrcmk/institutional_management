@@ -45,9 +45,8 @@ export default function PersonnelDetailScreen() {
       if (shiftData) {
         shift = calculateShiftForDate(
           shiftData.patternDays,
-          shiftData.referenceDate,
+          shiftData.group.cycleStartDate,
           todayDateString(),
-          shiftData.group.cycleOffset,
         );
       }
 

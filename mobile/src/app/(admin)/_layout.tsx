@@ -12,14 +12,15 @@ export default function AdminLayout() {
       <Stack.Screen name="units/create" options={{ title: 'Yeni Birim' }} />
       <Stack.Screen name="units/[id]" options={{ title: 'Birim Detay' }} />
       <Stack.Screen name="units/[id]/schedule" options={{ title: 'Vardiya Planı' }} />
+      <Stack.Screen name="units/[id]/setup-shifts" options={{ title: 'Vardiya Kurulumu' }} />
       <Stack.Screen name="units/[id]/add-personnel" options={{ title: 'Personel Ekle' }} />
-      <Stack.Screen name="shifts/index" options={{ title: 'Vardiyalar' }} />
+      <Stack.Screen name="shifts/index" options={{ title: 'Bugünkü Vardiyalar' }} />
       <Stack.Screen name="shifts/patterns/index" options={{ title: 'Vardiya Döngüleri' }} />
       <Stack.Screen name="shifts/patterns/create" options={{ title: 'Yeni Döngü' }} />
       <Stack.Screen name="shifts/patterns/[id]" options={{ title: 'Döngü Düzenle' }} />
       <Stack.Screen name="shifts/groups/create" options={{ title: 'Yeni Vardiya Grubu' }} />
       <Stack.Screen name="shifts/[id]" options={{ title: 'Vardiya Detay' }} />
-      <Stack.Screen name="shifts/[id]/add-personnel" options={{ title: 'Gruba Personel Ekle' }} />
+      <Stack.Screen name="shifts/[id]/add-personnel" options={{ title: 'Vardiyaya Personel Ekle' }} />
       <Stack.Screen name="assignments/create" options={{ title: 'Yeni Görev' }} />
       <Stack.Screen name="assignments/[id]" options={{ title: 'Görev Detay' }} />
     </Stack>

@@ -1,13 +1,24 @@
 import { calculateShiftForDate, isWorkingShift } from '@/features/shifts/engine/shiftCalculator';
 import { getRepositories } from '@/shared/repositories';
-import type { Personnel, ShiftGroup } from '@/shared/types';
+import type { Personnel, ShiftGroup, ShiftType } from '@/shared/types';
 import { addDaysToDateString } from '@/shared/utils/id';
 
+export type WorkingShiftType = 'DAY' | 'NIGHT' | 'FULL';
+
 export interface ShiftSlotAssignment {
-  shiftType: 'DAY' | 'NIGHT';
+  shiftType: WorkingShiftType;
   startTime: string;
   endTime: string;
   group: ShiftGroup;
+  personnel: Personnel[];
+}
+
+export interface GroupDayStatus {
+  group: ShiftGroup;
+  shiftType: ShiftType;
+  startTime: string | null;
+  endTime: string | null;
+  cycleDayIndex: number;
   personnel: Personnel[];
 }
 
@@ -15,9 +26,52 @@ export interface UnitDaySchedule {
   date: string;
   unitId: string;
   unitName: string;
+  daySlots: ShiftSlotAssignment[];
+  nightSlots: ShiftSlotAssignment[];
+  fullSlots: ShiftSlotAssignment[];
+  /** @deprecated daySlots[0] kullanın */
   daySlot: ShiftSlotAssignment | null;
+  /** @deprecated nightSlots[0] kullanın */
   nightSlot: ShiftSlotAssignment | null;
   offGroups: Array<{ group: ShiftGroup; personnel: Personnel[] }>;
+  allGroups: GroupDayStatus[];
+  collisions: string[];
+}
+
+export interface UnitShiftOverview {
+  unitId: string;
+  unitName: string;
+  schedule: UnitDaySchedule;
+}
+
+export function getScheduleActiveSlots(schedule: UnitDaySchedule): ShiftSlotAssignment[] {
+  return [...schedule.daySlots, ...schedule.nightSlots, ...schedule.fullSlots];
+}
+
+export async function getUnitGroupStatuses(
+  unitId: string,
+  date: string,
+): Promise<GroupDayStatus[]> {
+  const repos = getRepositories();
+  const groups = await repos.shifts.getGroupsByUnit(unitId);
+  const statuses: GroupDayStatus[] = [];
+
+  for (const group of groups) {
+    const patternDays = await repos.shifts.getPatternDays(group.patternId);
+    const shift = calculateShiftForDate(patternDays, group.cycleStartDate, date);
+    const personnel = await repos.shifts.getPersonnelInGroup(group.id);
+
+    statuses.push({
+      group,
+      shiftType: shift.shiftType,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+      cycleDayIndex: shift.cycleDayIndex,
+      personnel,
+    });
+  }
+
+  return statuses;
 }
 
 export async function getUnitScheduleForDate(
@@ -28,52 +82,111 @@ export async function getUnitScheduleForDate(
   const unit = await repos.units.getById(unitId);
   if (!unit) return null;
 
-  const groups = await repos.shifts.getGroupsByUnit(unitId);
-  let daySlot: ShiftSlotAssignment | null = null;
-  let nightSlot: ShiftSlotAssignment | null = null;
+  const allGroups = await getUnitGroupStatuses(unitId, date);
+  const daySlots: ShiftSlotAssignment[] = [];
+  const nightSlots: ShiftSlotAssignment[] = [];
+  const fullSlots: ShiftSlotAssignment[] = [];
   const offGroups: UnitDaySchedule['offGroups'] = [];
+  const collisions: string[] = [];
 
-  for (const group of groups) {
-    const pattern = await repos.shifts.getPatternById(group.patternId);
-    if (!pattern) continue;
-
-    const patternDays = await repos.shifts.getPatternDays(group.patternId);
-    const shift = calculateShiftForDate(
-      patternDays,
-      pattern.referenceDate,
-      date,
-      group.cycleOffset,
-    );
-    const personnel = await repos.shifts.getPersonnelInGroup(group.id);
-
-    if (!isWorkingShift(shift.shiftType)) {
-      offGroups.push({ group, personnel });
+  for (const status of allGroups) {
+    if (!isWorkingShift(status.shiftType)) {
+      offGroups.push({ group: status.group, personnel: status.personnel });
       continue;
     }
 
     const slot: ShiftSlotAssignment = {
-      shiftType: shift.shiftType as 'DAY' | 'NIGHT',
-      startTime: shift.startTime!,
-      endTime: shift.endTime!,
-      group,
-      personnel,
+      shiftType: status.shiftType as WorkingShiftType,
+      startTime: status.startTime!,
+      endTime: status.endTime!,
+      group: status.group,
+      personnel: status.personnel,
     };
 
-    if (shift.shiftType === 'DAY') {
-      daySlot = slot;
+    if (status.shiftType === 'DAY') {
+      daySlots.push(slot);
+    } else if (status.shiftType === 'NIGHT') {
+      nightSlots.push(slot);
     } else {
-      nightSlot = slot;
+      fullSlots.push(slot);
     }
+  }
+
+  if (daySlots.length > 1) {
+    collisions.push(
+      `Gündüz çakışması: ${daySlots.map((s) => s.group.name).join(', ')}`,
+    );
+  }
+  if (nightSlots.length > 1) {
+    collisions.push(
+      `Gece çakışması: ${nightSlots.map((s) => s.group.name).join(', ')}`,
+    );
+  }
+  if (fullSlots.length > 1) {
+    collisions.push(
+      `24 saat çakışması: ${fullSlots.map((s) => s.group.name).join(', ')}`,
+    );
   }
 
   return {
     date,
     unitId,
     unitName: unit.name,
-    daySlot,
-    nightSlot,
+    daySlots,
+    nightSlots,
+    fullSlots,
+    daySlot: daySlots[0] ?? null,
+    nightSlot: nightSlots[0] ?? null,
     offGroups,
+    allGroups,
+    collisions,
   };
+}
+
+export async function getInstitutionShiftOverview(
+  institutionId: string,
+  date: string,
+): Promise<UnitShiftOverview[]> {
+  const repos = getRepositories();
+  const units = await repos.units.getAll(institutionId);
+  const results: UnitShiftOverview[] = [];
+
+  for (const unit of units) {
+    const groups = await repos.shifts.getGroupsByUnit(unit.id);
+    if (groups.length === 0) continue;
+
+    const schedule = await getUnitScheduleForDate(unit.id, date);
+    if (!schedule) continue;
+
+    results.push({
+      unitId: unit.id,
+      unitName: unit.name,
+      schedule,
+    });
+  }
+
+  return results.sort((a, b) => a.unitName.localeCompare(b.unitName, 'tr'));
+}
+
+export async function getInstitutionActiveShifts(
+  institutionId: string,
+  date: string,
+): Promise<Array<{ unitId: string; unitName: string; slot: ShiftSlotAssignment }>> {
+  const overview = await getInstitutionShiftOverview(institutionId, date);
+  const results: Array<{ unitId: string; unitName: string; slot: ShiftSlotAssignment }> = [];
+
+  for (const { unitId, unitName, schedule } of overview) {
+    for (const slot of getScheduleActiveSlots(schedule)) {
+      results.push({ unitId, unitName, slot });
+    }
+  }
+
+  const order: Record<WorkingShiftType, number> = { DAY: 0, FULL: 1, NIGHT: 2 };
+  return results.sort((a, b) => {
+    const unitCmp = a.unitName.localeCompare(b.unitName, 'tr');
+    if (unitCmp !== 0) return unitCmp;
+    return order[a.slot.shiftType] - order[b.slot.shiftType];
+  });
 }
 
 export async function getUnitScheduleRange(

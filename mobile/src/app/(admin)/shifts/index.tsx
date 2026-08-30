@@ -1,97 +1,108 @@
-import { useState } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View, Text, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
-import { getRepositories } from '@/shared/repositories';
-import { getUnitScheduleForDate } from '@/features/shifts/services/scheduleService';
-import { UnitShiftScheduleCard } from '@/shared/components/UnitShiftSchedule';
+import { getInstitutionShiftOverview, getScheduleActiveSlots } from '@/features/shifts/services/scheduleService';
+import { shiftQueryKeys } from '@/features/shifts/constants/shiftQueryKeys';
+import { formatSlotLabel } from '@/features/shifts/constants/shiftDefaults';
 import { Button } from '@/shared/components/Button';
+import { CardTitle, CardSubtitle } from '@/shared/components/Card';
+import { ShiftBadge } from '@/shared/components/Badge';
 import { LoadingState } from '@/shared/components/ErrorState';
 import { EmptyState } from '@/shared/components/EmptyState';
-import { colors, spacing } from '@/shared/theme';
-import { todayDateString } from '@/shared/utils/id';
+import { colors, spacing, typography } from '@/shared/theme';
+import { formatDisplayDate, getPersonnelFullName, todayDateString } from '@/shared/utils/id';
 
 export default function ShiftsListScreen() {
   const router = useRouter();
   const institutionId = useInstitutionId();
-  const [selectedDate] = useState(todayDateString());
+  const today = todayDateString();
 
-  const { data: units, isLoading: unitsLoading } = useQuery({
-    queryKey: ['units-with-shifts', institutionId],
-    queryFn: async () => {
-      const repos = getRepositories();
-      const allUnits = await repos.units.getAll(institutionId!);
-      const withGroups = await Promise.all(
-        allUnits.map(async (unit) => {
-          const groups = await repos.shifts.getGroupsByUnit(unit.id);
-          return groups.length > 0 ? unit : null;
-        }),
-      );
-      return withGroups.filter(Boolean) as typeof allUnits;
-    },
+  const { data: overview, isLoading } = useQuery({
+    queryKey: shiftQueryKeys.overview(institutionId!, today),
+    queryFn: () => getInstitutionShiftOverview(institutionId!, today),
     enabled: !!institutionId,
   });
 
-  const { data: schedules, isLoading: schedulesLoading } = useQuery({
-    queryKey: ['unit-schedules-today', institutionId, selectedDate, units?.map((u) => u.id)],
-    queryFn: async () => {
-      if (!units?.length) return [];
-      const results = await Promise.all(
-        units.map((unit) => getUnitScheduleForDate(unit.id, selectedDate)),
-      );
-      return results.filter(Boolean);
-    },
-    enabled: !!units?.length,
-  });
-
-  if (unitsLoading || schedulesLoading) return <LoadingState />;
+  if (isLoading) return <LoadingState />;
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
+        <Text style={styles.date}>{formatDisplayDate(today)}</Text>
+        <Text style={styles.hint}>Vardiya kurmak için Birimler ekranını kullanın.</Text>
         <Button
-          title="Vardiya Döngüleri"
+          title="Birimlere Git"
           variant="outline"
-          onPress={() => router.push('/(admin)/shifts/patterns')}
+          onPress={() => router.push('/(admin)/units')}
           fullWidth
         />
       </View>
-      <FlatList
-        data={schedules}
-        keyExtractor={(item) => item!.unitId}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
+
+      <ScrollView contentContainerStyle={styles.list}>
+        {overview?.length === 0 ? (
           <EmptyState
-            title="Vardiya planı yok"
-            message="Birimlere vardiya grubu ve döngü tanımlayın."
+            title="Bugün vardiya yok"
+            message="Önce birim oluşturun, sonra birim içinden vardiyaları kurun."
             module="shifts"
+            actionLabel="Birim Ekle"
+            onAction={() => router.push('/(admin)/units/create')}
           />
-        }
-        renderItem={({ item }) =>
-          item ? (
-            <View style={styles.cardWrap}>
-              <UnitShiftScheduleCard
-                schedule={item}
-                onPressDate={() => router.push(`/(admin)/units/${item.unitId}/schedule`)}
-              />
-              <Button
-                title="Tüm Planı Gör"
-                variant="ghost"
-                onPress={() => router.push(`/(admin)/units/${item.unitId}/schedule`)}
-                fullWidth
-              />
+        ) : (
+          overview?.map((item) => (
+            <View key={item.unitId} style={styles.unitBlock}>
+              <Text style={styles.unitName}>{item.unitName}</Text>
+              {getScheduleActiveSlots(item.schedule).map((slot) => (
+                <Pressable
+                  key={`${slot.group.id}-${slot.shiftType}`}
+                  onPress={() => router.push(`/(admin)/shifts/${slot.group.id}`)}
+                  style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+                >
+                  <View style={styles.cardTop}>
+                    <View>
+                      <CardTitle>{slot.group.name}</CardTitle>
+                      <CardSubtitle>
+                        {formatSlotLabel(slot.startTime, slot.endTime, slot.shiftType)}
+                      </CardSubtitle>
+                    </View>
+                    <ShiftBadge shiftType={slot.shiftType} />
+                  </View>
+                  <Text style={styles.personnel}>
+                    {slot.personnel.length} personel
+                    {slot.personnel.length > 0
+                      ? ` · ${slot.personnel
+                          .slice(0, 2)
+                          .map((p) => getPersonnelFullName(p))
+                          .join(', ')}`
+                      : ''}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
-          ) : null
-        }
-      />
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  header: { padding: spacing.md },
-  list: { padding: spacing.md, paddingTop: 0, paddingBottom: spacing.xxl, gap: spacing.md },
-  cardWrap: { gap: spacing.xs, marginBottom: spacing.sm },
+  header: { padding: spacing.md, gap: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  date: { ...typography.h2, color: colors.text },
+  hint: { ...typography.bodySmall, color: colors.textMuted },
+  list: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.lg },
+  unitBlock: { gap: spacing.sm },
+  unitName: { ...typography.h3, color: colors.primary },
+  card: {
+    padding: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    gap: spacing.xs,
+  },
+  cardPressed: { backgroundColor: colors.primaryMuted },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  personnel: { ...typography.bodySmall, color: colors.textSecondary },
 });

@@ -4,6 +4,7 @@ import * as m001 from '@/shared/database/migrations/migration_001_initial';
 import * as m002 from '@/shared/database/migrations/migration_002_shift_engine';
 import * as m003 from '@/shared/database/migrations/migration_003_assignments';
 import * as m004 from '@/shared/database/migrations/migration_004_shift_group_offset';
+import * as m005 from '@/shared/database/migrations/migration_005_shift_group_cycle_start';
 import { initRepositories } from '@/shared/repositories';
 import { seedDemoData } from './seedDemoData';
 
@@ -14,7 +15,7 @@ async function runMigrationsOn(db: SQLiteDatabaseAdapter): Promise<void> {
       applied_at TEXT NOT NULL
     );
   `);
-  for (const migration of [m001, m002, m003, m004]) {
+  for (const migration of [m001, m002, m003, m004, m005]) {
     await migration.up(db);
     await db.runAsync(
       'INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',

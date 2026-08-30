@@ -5,8 +5,9 @@ import * as m002 from './migration_002_shift_engine';
 import * as m003 from './migration_003_assignments';
 
 import * as m004 from './migration_004_shift_group_offset';
+import * as m005 from './migration_005_shift_group_cycle_start';
 
-const migrations = [m001, m002, m003, m004];
+const migrations = [m001, m002, m003, m004, m005];
 
 async function ensureMigrationsTable(db: SQLiteDatabaseAdapter): Promise<void> {
   await db.execAsync(`

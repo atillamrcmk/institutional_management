@@ -1,6 +1,8 @@
 import {
   PRESET_CYCLE_3_DAY,
   PRESET_CYCLE_4_DAY,
+  PRESET_CYCLE_24H_MIXED,
+  PRESET_CYCLE_MERKEZ,
   defaultTimesForShiftType,
 } from '@/features/shifts/constants/shiftDefaults';
 import type { ShiftType } from '@/shared/types';
@@ -21,7 +23,7 @@ interface ShiftPatternDayEditorProps {
   onChange: (days: PatternDayInput[]) => void;
 }
 
-const SHIFT_TYPES: ShiftType[] = ['DAY', 'NIGHT', 'OFF'];
+const SHIFT_TYPES: ShiftType[] = ['DAY', 'NIGHT', 'FULL', 'OFF'];
 
 export function ShiftPatternDayEditor({ days, onChange }: ShiftPatternDayEditorProps) {
   const updateDay = (index: number, patch: Partial<PatternDayInput>) => {
@@ -44,11 +46,21 @@ export function ShiftPatternDayEditor({ days, onChange }: ShiftPatternDayEditorP
   return (
     <View style={styles.container}>
       <Text style={styles.hint}>
-        Varsayılan saatler: Gündüz 08:00–20:00, Gece 20:00–08:00 (isterseniz değiştirin)
+        Varsayılan: Gündüz 08:00–20:00, Gece 20:00–08:00, 24 Saat 08:00–08:00 (ertesi gün)
       </Text>
       <View style={styles.quickRow}>
         <Button title="3G Döngü" variant="outline" onPress={() => onChange([...PRESET_CYCLE_3_DAY])} />
         <Button title="4G Döngü" variant="outline" onPress={() => onChange([...PRESET_CYCLE_4_DAY])} />
+        <Button
+          title="Merkez (2G+2G+4İ)"
+          variant="outline"
+          onPress={() => onChange([...PRESET_CYCLE_MERKEZ])}
+        />
+        <Button
+          title="24S (1+2İ+1+3İ)"
+          variant="outline"
+          onPress={() => onChange([...PRESET_CYCLE_24H_MIXED])}
+        />
         {SHIFT_TYPES.map((type) => (
           <Pressable key={type} onPress={() => addDay(type)} style={styles.addChip}>
             <Text style={styles.addChipText}>+ {getShiftTypeLabel(type)}</Text>

@@ -47,6 +47,13 @@ usersRouter.post(
         return;
       }
 
+      if (password.length < 8 || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+        res.status(400).json({
+          error: 'Şifre en az 8 karakter olmalı; en az bir harf ve bir rakam içermelidir',
+        });
+        return;
+      }
+
       if (role === 'INSTITUTION_ADMIN' && req.auth!.role !== 'INSTITUTION_ADMIN') {
         res.status(403).json({ error: 'Kurum yöneticisi yalnızca owner atayabilir' });
         return;

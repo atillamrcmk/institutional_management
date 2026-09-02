@@ -20,6 +20,7 @@ import { assignmentsRouter } from './routes/assignments.js';
 import { presenceRouter } from './routes/presence.js';
 import { devicesRouter, pushRouter } from './routes/devices.js';
 import { messagesRouter } from './routes/messages.js';
+import { isFirebasePushConfigured } from './services/pushService.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 8787);
@@ -38,6 +39,7 @@ app.get('/health', (_req, res) => {
     ok: true,
     service: 'personel-planla-api',
     multiTenant: true,
+    firebasePush: isFirebasePushConfigured(),
   });
 });
 

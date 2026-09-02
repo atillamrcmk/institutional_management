@@ -20,7 +20,12 @@ const createTenantSchema = z.object({
   orgType: z.enum(['INSTITUTION', 'BUSINESS']).optional(),
   owner: z.object({
     email: z.string().trim().toLowerCase().email('Geçerli bir e-posta girin'),
-    password: z.string().min(6, 'Şifre en az 6 karakter olmalıdır').max(200),
+    password: z
+      .string()
+      .min(8, 'Şifre en az 8 karakter olmalıdır')
+      .max(200)
+      .regex(/[A-Za-z]/, 'Şifre en az bir harf içermelidir')
+      .regex(/[0-9]/, 'Şifre en az bir rakam içermelidir'),
     displayName: z.string().trim().min(1, 'Ad soyad zorunludur').max(200),
   }),
 });

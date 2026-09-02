@@ -8,6 +8,23 @@ import type { SendMessageInput, User } from '@/shared/types';
 const API_URL = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, '') ?? '';
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? '';
 
+type PushProvider = 'firebase' | 'expo';
+
+function resolvePushProvider(): PushProvider {
+  const fromExtra = Constants.expoConfig?.extra?.pushProvider;
+  const fromEnv = process.env.EXPO_PUBLIC_PUSH_PROVIDER;
+  const value = (fromEnv ?? fromExtra ?? 'firebase').toLowerCase();
+  return value === 'expo' ? 'expo' : 'firebase';
+}
+
+function resolveExpoProjectId(): string | undefined {
+  return (
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId ??
+    process.env.EXPO_PUBLIC_EAS_PROJECT_ID
+  );
+}
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -18,8 +35,28 @@ Notifications.setNotificationHandler({
   }),
 });
 
+async function obtainPushToken(provider: PushProvider): Promise<string> {
+  if (provider === 'expo') {
+    const projectId = resolveExpoProjectId();
+    if (!projectId) {
+      throw new Error(
+        'Expo push için EXPO_PUBLIC_EAS_PROJECT_ID gerekli. Firebase kullanmak için EXPO_PUBLIC_PUSH_PROVIDER=firebase bırakın.',
+      );
+    }
+    const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+    return tokenData.data;
+  }
+
+  // Firebase FCM (Android) / APNs (iOS) — google-services.json + development/production build gerekir.
+  const tokenData = await Notifications.getDevicePushTokenAsync();
+  return tokenData.data;
+}
+
 export async function registerPushNotifications(userId: string): Promise<string | null> {
   if (!Device.isDevice) {
+    if (__DEV__) {
+      console.warn('[push] Emülatörde push token alınamaz; fiziksel cihaz kullanın.');
+    }
     return null;
   }
 
@@ -41,33 +78,26 @@ export async function registerPushNotifications(userId: string): Promise<string 
     return null;
   }
 
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ??
-    Constants.easConfig?.projectId;
+  const provider = resolvePushProvider();
 
-  const tokenData = await Notifications.getExpoPushTokenAsync(
-    projectId ? { projectId } : undefined,
-  );
-  const token = tokenData.data;
+  try {
+    const token = await obtainPushToken(provider);
+    await getRepositories().messages.savePushToken(userId, token, Platform.OS);
 
-  await getRepositories().messages.savePushToken(userId, token, Platform.OS);
+    if (__DEV__) {
+      console.log(`[push] Token kaydedildi (${provider}):`, token.slice(0, 24), '...');
+    }
 
-  if (API_URL) {
-    await fetch(`${API_URL}/api/v1/devices/register`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(API_KEY ? { 'X-API-Key': API_KEY } : {}),
-      },
-      body: JSON.stringify({
-        userId,
-        token,
-        platform: Platform.OS,
-      }),
-    }).catch(() => undefined);
+    return token;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(
+        `[push] Token alınamadı (${provider}). Firebase için google-services.json + eas build gerekir:`,
+        error,
+      );
+    }
+    return null;
   }
-
-  return token;
 }
 
 export async function sendPushNotifications(

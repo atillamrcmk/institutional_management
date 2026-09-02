@@ -44,8 +44,12 @@ export default function CreateInstitutionScreen() {
       Alert.alert('Eksik bilgi', 'Tüm alanları doldurun.');
       return;
     }
-    if (password.length < 6) {
-      Alert.alert('Şifre', 'Şifre en az 6 karakter olmalı.');
+    if (password.length < 8) {
+      Alert.alert('Şifre', 'Şifre en az 8 karakter olmalı; harf ve rakam içermelidir.');
+      return;
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      Alert.alert('Şifre', 'Şifre en az bir harf ve bir rakam içermelidir.');
       return;
     }
 
@@ -148,7 +152,7 @@ export default function CreateInstitutionScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholder="En az 6 karakter"
+          placeholder="En az 8 karakter, harf + rakam"
         />
 
         <View style={styles.infoBox}>

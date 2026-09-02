@@ -51,16 +51,41 @@ async function sendExpoPush(tokens: string[], payload: PushPayload): Promise<voi
 }
 
 async function sendFcmPush(tokens: string[], payload: PushPayload): Promise<void> {
-  if (!initFirebase() || tokens.length === 0) return;
+  if (!initFirebase()) {
+    console.warn('[push] FIREBASE_* ortam değişkenleri tanımlı değil; FCM gönderilmedi.');
+    return;
+  }
+  if (tokens.length === 0) return;
 
-  await admin.messaging().sendEachForMulticast({
+  const response = await admin.messaging().sendEachForMulticast({
     tokens,
     notification: {
       title: payload.title,
       body: payload.body,
     },
     data: payload.data ?? {},
+    android: {
+      priority: 'high',
+      notification: {
+        channelId: 'messages',
+      },
+    },
   });
+
+  if (response.failureCount > 0) {
+    const errors = response.responses
+      .map((item, index) => (item.success ? null : { token: tokens[index], error: item.error?.message }))
+      .filter(Boolean);
+    console.error('[push] FCM hataları:', errors);
+  }
+}
+
+export function isFirebasePushConfigured(): boolean {
+  return Boolean(
+    process.env.FIREBASE_PROJECT_ID &&
+      process.env.FIREBASE_CLIENT_EMAIL &&
+      process.env.FIREBASE_PRIVATE_KEY,
+  );
 }
 
 export async function sendPushNotifications(

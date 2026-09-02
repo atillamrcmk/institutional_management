@@ -26,8 +26,12 @@ export default function InviteUserScreen() {
   const [saving, setSaving] = useState(false);
 
   const handleInvite = async () => {
-    if (!displayName.trim() || !email.trim() || !password || password.length < 6) {
-      Alert.alert('Eksik bilgi', 'Ad, e-posta ve en az 6 karakter şifre zorunludur.');
+    if (!displayName.trim() || !email.trim() || !password || password.length < 8) {
+      Alert.alert('Eksik bilgi', 'Ad, e-posta ve en az 8 karakter şifre zorunludur.');
+      return;
+    }
+    if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+      Alert.alert('Şifre', 'Şifre en az bir harf ve bir rakam içermelidir.');
       return;
     }
 
@@ -72,7 +76,7 @@ export default function InviteUserScreen() {
           value={password}
           onChangeText={setPassword}
           secureTextEntry
-          placeholder="En az 6 karakter"
+          placeholder="En az 8 karakter, harf + rakam"
         />
 
         <Text style={styles.label}>Rol</Text>

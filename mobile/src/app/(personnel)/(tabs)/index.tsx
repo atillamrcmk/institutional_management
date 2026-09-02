@@ -1,5 +1,7 @@
-import { Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet, View, Pressable } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { getRepositories } from '@/shared/repositories';
 import { calculateShiftForDate, formatShiftTime } from '@/features/shifts/engine/shiftCalculator';
@@ -10,21 +12,38 @@ import { LoadingState } from '@/shared/components/ErrorState';
 import { Screen } from '@/shared/components/layout/Screen';
 import { PageHeader } from '@/shared/components/layout/PageHeader';
 import { Section } from '@/shared/components/layout/Section';
-import { colors, spacing, typography } from '@/shared/theme';
+import { colors, modules, radius, shadows, spacing, typography } from '@/shared/theme';
 import { addDaysToDateString, todayDateString } from '@/shared/utils/id';
 
 export default function PersonnelHomeScreen() {
+  const router = useRouter();
   const user = useAuthStore((s) => s.user)!;
+  const tenant = useAuthStore((s) => s.tenant);
 
   const { data, isLoading } = useQuery({
-    queryKey: ['personnel-home', user.personnelId],
+    queryKey: ['personnel-home', user.personnelId, user.id],
     queryFn: async () => {
-      if (!user.personnelId) return null;
       const repos = getRepositories();
-      const personnel = await repos.personnel.getById(user.personnelId);
-      const unit = await repos.units.getCurrentUnitForPersonnel(user.personnelId);
       const today = todayDateString();
       const tomorrow = addDaysToDateString(today, 1);
+      const unread = await repos.messages
+        .getUnreadCount('', user.id, user.personnelId)
+        .catch(() => 0);
+
+      if (!user.personnelId) {
+        return {
+          personnel: null,
+          unit: null,
+          shiftData: null,
+          todayShift: null,
+          tomorrowShift: null,
+          taskAssignment: null,
+          unread,
+        };
+      }
+
+      const personnel = await repos.personnel.getById(user.personnelId);
+      const unit = await repos.units.getCurrentUnitForPersonnel(user.personnelId);
       const shiftData = await repos.shifts.getActiveAssignmentForPersonnel(
         user.personnelId,
         today,
@@ -50,54 +69,73 @@ export default function PersonnelHomeScreen() {
         todayShift = getOfficeShiftForDate(unit, today);
         tomorrowShift = getOfficeShiftForDate(unit, tomorrow);
       }
-      return { personnel, unit, shiftData, todayShift, tomorrowShift, taskAssignment };
+      return { personnel, unit, shiftData, todayShift, tomorrowShift, taskAssignment, unread };
     },
   });
 
   if (isLoading) return <LoadingState />;
-  if (!data?.personnel) {
-    return <LoadingState message="Personel bilgisi bulunamadı" />;
-  }
+
+  const firstName = data?.personnel?.firstName ?? user.displayName.split(' ')[0];
 
   return (
     <Screen scroll>
       <PageHeader
-        title={`Merhaba, ${data.personnel.firstName}`}
-        subtitle="Bugünkü mesai ve görev özeti"
+        title={`Merhaba, ${firstName}`}
+        subtitle={tenant?.name ?? 'Bugünkü mesai ve görev özeti'}
         module="dashboard"
       />
 
-      <Section title="Bugün">
-        <Card module="shifts" variant="tinted">
-          {data.shiftData ? (
-            <>
-              <CardTitle>{data.shiftData.group.name}</CardTitle>
-              {data.todayShift ? (
-                <>
-                  <CardSubtitle>
-                    {formatShiftTime(data.todayShift.startTime, data.todayShift.endTime)}
-                  </CardSubtitle>
-                  <ShiftBadge shiftType={data.todayShift.shiftType} />
-                </>
-              ) : null}
-              <Text style={styles.unit}>{data.unit?.name ?? '—'}</Text>
-            </>
-          ) : data.todayShift ? (
-            <>
-              <CardTitle>Mesai</CardTitle>
-              <CardSubtitle>
+      <View style={[styles.heroCard, shadows.md]}>
+        <Text style={styles.heroOverline}>Bugün</Text>
+        {data?.shiftData || data?.todayShift ? (
+          <>
+            <Text style={styles.heroTitle}>
+              {data.shiftData?.group.name ?? 'Mesai'}
+            </Text>
+            {data.todayShift ? (
+              <Text style={styles.heroTime}>
                 {formatShiftTime(data.todayShift.startTime, data.todayShift.endTime)}
-              </CardSubtitle>
-              <ShiftBadge shiftType={data.todayShift.shiftType} />
+              </Text>
+            ) : null}
+            <View style={styles.heroMeta}>
+              {data.todayShift ? <ShiftBadge shiftType={data.todayShift.shiftType} /> : null}
               <Text style={styles.unit}>{data.unit?.name ?? '—'}</Text>
-            </>
-          ) : (
-            <CardSubtitle>Vardiya ataması yok</CardSubtitle>
-          )}
-        </Card>
+            </View>
+          </>
+        ) : (
+          <Text style={styles.heroTitle}>Vardiya ataması yok</Text>
+        )}
+      </View>
+
+      <Section title="Kısayollar">
+        <View style={styles.shortcuts}>
+          <Pressable
+            style={[styles.shortcut, shadows.sm]}
+            onPress={() => router.push('/(personnel)/(tabs)/calendar')}
+          >
+            <Ionicons name="calendar-outline" size={22} color={modules.planning.main} />
+            <Text style={styles.shortcutLabel}>Takvim</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.shortcut, shadows.sm]}
+            onPress={() => router.push('/(personnel)/(tabs)/shift')}
+          >
+            <Ionicons name="people-outline" size={22} color={modules.presence.main} />
+            <Text style={styles.shortcutLabel}>Kurumda</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.shortcut, shadows.sm]}
+            onPress={() => router.push('/(personnel)/(tabs)/messages')}
+          >
+            <Ionicons name="mail-outline" size={22} color={modules.dashboard.main} />
+            <Text style={styles.shortcutLabel}>
+              Mesajlar{data?.unread ? ` (${data.unread})` : ''}
+            </Text>
+          </Pressable>
+        </View>
       </Section>
 
-      {data.taskAssignment ? (
+      {data?.taskAssignment ? (
         <Section title="Ek Görev">
           <Card module="assignments" variant="tinted">
             <CardTitle>{data.taskAssignment.title}</CardTitle>
@@ -111,7 +149,7 @@ export default function PersonnelHomeScreen() {
 
       <Section title="Yarın">
         <Card module="planning" variant="elevated">
-          {data.tomorrowShift ? (
+          {data?.tomorrowShift ? (
             <>
               <CardSubtitle>
                 {formatShiftTime(data.tomorrowShift.startTime, data.tomorrowShift.endTime)}
@@ -128,5 +166,30 @@ export default function PersonnelHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  unit: { ...typography.bodySmall, color: colors.textSecondary, marginTop: spacing.sm },
+  heroCard: {
+    backgroundColor: modules.shifts.light,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: modules.shifts.light,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  heroOverline: { ...typography.overline, color: modules.shifts.dark },
+  heroTitle: { ...typography.h1, color: colors.text },
+  heroTime: { ...typography.h2, color: modules.shifts.dark },
+  heroMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.xs },
+  unit: { ...typography.bodySmall, color: colors.textSecondary },
+  shortcuts: { flexDirection: 'row', gap: spacing.sm },
+  shortcut: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    alignItems: 'flex-start',
+  },
+  shortcutLabel: { ...typography.label, color: colors.text },
 });

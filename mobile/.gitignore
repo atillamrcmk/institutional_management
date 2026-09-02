@@ -31,7 +31,12 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+
+# Firebase (indirdiğiniz gerçek dosyalar — örnekleri repoda tutmayın)
+google-services.json
+GoogleService-Info.plist
 
 # typescript
 *.tsbuildinfo

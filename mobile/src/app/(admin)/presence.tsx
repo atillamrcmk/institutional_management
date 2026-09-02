@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { FlatList, View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/features/auth/store/authStore';
-import { getPresenceForDate } from '@/features/presence/services/presenceService';
+import { getPresenceForDate, getOfficeUnitsSummary } from '@/features/presence/services/presenceService';
 import { getInstitutionShiftOverview, getScheduleActiveSlots } from '@/features/shifts/services/scheduleService';
 import { shiftQueryKeys } from '@/features/shifts/constants/shiftQueryKeys';
 import { formatSlotLabel } from '@/features/shifts/constants/shiftDefaults';
@@ -14,6 +14,7 @@ import { CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { LoadingState } from '@/shared/components/ErrorState';
 import { EmptyState } from '@/shared/components/EmptyState';
 import { Chip } from '@/shared/components/layout/Chip';
+import { Input } from '@/shared/components/Input';
 import { colors, modules, radius, spacing, typography } from '@/shared/theme';
 import type { Unit } from '@/shared/types';
 import { formatDisplayDate, getPersonnelFullName, todayDateString } from '@/shared/utils/id';
@@ -23,6 +24,8 @@ export default function PresenceScreen() {
   const institutionId = useAuthStore((s) => s.institutionId)!;
   const today = todayDateString();
   const [unitFilter, setUnitFilter] = useState<string | undefined>();
+  const [search, setSearch] = useState('');
+  const [personnelExpanded, setPersonnelExpanded] = useState(false);
 
   const { data: units } = useQuery({
     queryKey: ['units', institutionId],
@@ -45,6 +48,37 @@ export default function PresenceScreen() {
   const filteredOverview = unitFilter
     ? overview?.filter((item) => item.unitId === unitFilter)
     : overview;
+
+  const { data: officeUnits } = useQuery({
+    queryKey: ['office-units', institutionId, today, unitFilter],
+    queryFn: () => getOfficeUnitsSummary(institutionId, today),
+  });
+
+  const filteredOfficeUnits = unitFilter
+    ? officeUnits?.filter((item) => item.unitId === unitFilter)
+    : officeUnits;
+
+  const filteredPresence = useMemo(() => {
+    if (!data) return [];
+    const q = search.trim().toLowerCase();
+    if (!q) return data;
+    return data.filter((item) => {
+      const name = getPersonnelFullName(item.personnel).toLowerCase();
+      return (
+        name.includes(q) ||
+        item.personnel.sicilNo.toLowerCase().includes(q) ||
+        (item.unit?.name.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }, [data, search]);
+
+  const presencePreview = filteredPresence
+    .slice(0, 3)
+    .map((item) => getPersonnelFullName(item.personnel))
+    .join(', ');
+
+  const hasShiftOverview = (filteredOverview?.length ?? 0) > 0;
+  const hasOfficeOverview = (filteredOfficeUnits?.length ?? 0) > 0;
 
   if (isLoading || shiftsLoading) {
     return <LoadingState message="Personel durumu yükleniyor..." />;
@@ -70,21 +104,56 @@ export default function PresenceScreen() {
         ))}
       </ScrollView>
 
+      <View style={styles.searchBar}>
+        <Input placeholder="Personel ara..." value={search} onChangeText={setSearch} />
+      </View>
+
       <FlatList
-        data={data}
+        data={personnelExpanded ? filteredPresence : []}
         keyExtractor={(item) => item.personnel.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.headerSection}>
-            <Text style={styles.sectionTitle}>{formatDisplayDate(today)} · Aktif Vardiyalar</Text>
+            <Text style={styles.sectionTitle}>{formatDisplayDate(today)} · Aktif Görevler</Text>
 
-            {!filteredOverview?.length ? (
+            {!hasShiftOverview && !hasOfficeOverview ? (
               <Text style={styles.emptyShifts}>
-                Bugün görevde vardiya yok. Birimlere vardiya grubu eklediğinizden ve döngü başlangıç
-                tarihlerini ayarladığınızdan emin olun.
+                Bugün görevde personel yok. Mesai birimlerine personel ekleyin veya vardiyalı
+                birimlerde döngü başlangıç tarihlerini kontrol edin.
               </Text>
-            ) : (
-              filteredOverview.map((unitItem) => (
+            ) : null}
+
+            {filteredOfficeUnits?.map((officeItem) => (
+              <View key={officeItem.unitId} style={styles.unitSection}>
+                <Text style={styles.unitLabel}>{officeItem.unitName} · Mesai</Text>
+                <Pressable
+                  onPress={() => router.push(`/(admin)/units/${officeItem.unitId}`)}
+                  style={({ pressed }) => [styles.shiftCard, pressed && styles.shiftCardPressed]}
+                >
+                  <View style={styles.shiftCardTop}>
+                    <View style={styles.shiftCardTitles}>
+                      <CardTitle>Mesai</CardTitle>
+                      <CardSubtitle>
+                        {officeItem.startTime} – {officeItem.endTime}
+                      </CardSubtitle>
+                    </View>
+                    <ShiftBadge shiftType="DAY" />
+                  </View>
+                  <Text style={styles.personnelCount}>
+                    {officeItem.personnel.length} personel
+                    {officeItem.personnel.length > 0
+                      ? ` · ${officeItem.personnel
+                          .slice(0, 3)
+                          .map((p) => getPersonnelFullName(p))
+                          .join(', ')}${officeItem.personnel.length > 3 ? '…' : ''}`
+                      : ''}
+                  </Text>
+                  <Text style={styles.tapHint}>Birim detayı için dokunun →</Text>
+                </Pressable>
+              </View>
+            ))}
+
+            {filteredOverview?.map((unitItem) => (
                 <View key={unitItem.unitId} style={styles.unitSection}>
                   <Text style={styles.unitLabel}>{unitItem.unitName}</Text>
 
@@ -126,13 +195,34 @@ export default function PresenceScreen() {
                     ))
                   )}
                 </View>
-              ))
-            )}
+              ))}
 
-            <Text style={[styles.sectionTitle, styles.personnelSection]}>Görevdeki Personel</Text>
-            {data?.length === 0 ? (
+            {filteredPresence.length === 0 ? (
               <EmptyState title="Kurumda personel yok" module="presence" />
-            ) : null}
+            ) : (
+              <Pressable
+                onPress={() => setPersonnelExpanded((value) => !value)}
+                style={({ pressed }) => [
+                  styles.personnelToggle,
+                  pressed && styles.shiftCardPressed,
+                ]}
+              >
+                <View style={styles.personnelToggleText}>
+                  <Text style={styles.sectionTitle}>
+                    Görevdeki Personel ({filteredPresence.length})
+                  </Text>
+                  {!personnelExpanded && presencePreview ? (
+                    <Text style={styles.personnelPreview} numberOfLines={2}>
+                      {presencePreview}
+                      {filteredPresence.length > 3 ? '…' : ''}
+                    </Text>
+                  ) : null}
+                </View>
+                <Text style={styles.toggleLabel}>
+                  {personnelExpanded ? 'Gizle ▴' : 'Tümünü görüntüle ▾'}
+                </Text>
+              </Pressable>
+            )}
           </View>
         }
         renderItem={({ item }) => (
@@ -155,10 +245,25 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     alignItems: 'center',
   },
+  searchBar: { paddingHorizontal: spacing.md, paddingBottom: spacing.sm },
   list: { padding: spacing.md, paddingBottom: spacing.xxl },
   headerSection: { gap: spacing.sm, marginBottom: spacing.md },
   sectionTitle: { ...typography.h3, color: colors.text },
-  personnelSection: { marginTop: spacing.md },
+  personnelToggle: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  personnelToggleText: { flex: 1, gap: 2 },
+  personnelPreview: { ...typography.bodySmall, color: colors.textMuted },
+  toggleLabel: { ...typography.caption, color: modules.presence.main, fontWeight: '700' },
   unitSection: { gap: spacing.sm, marginBottom: spacing.sm },
   unitLabel: { ...typography.label, color: modules.presence.main, fontWeight: '700' },
   collision: { ...typography.caption, color: colors.warning },

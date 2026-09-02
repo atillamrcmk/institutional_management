@@ -29,6 +29,7 @@ function mapPersonnel(row: Record<string, unknown>): Personnel {
     lastName: row.last_name as string,
     sicilNo: row.sicil_no as string,
     title: (row.title as string) ?? null,
+    photoUri: (row.photo_uri as string) ?? null,
     status: row.status as Personnel['status'],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,

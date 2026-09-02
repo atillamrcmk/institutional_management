@@ -57,7 +57,12 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     minimumStaff: 4,
   });
   await repos.units.create(institutionId, { name: 'Ziyaret', parentId: guvenlik.id, minimumStaff: 2 });
-  await repos.units.create(institutionId, { name: 'İdari Birim' });
+  const idariBirim = await repos.units.create(institutionId, {
+    name: 'İdari Birim',
+    workScheduleType: 'OFFICE',
+    officeStartTime: '08:00',
+    officeEndTime: '17:00',
+  });
 
   const maltaGroups = await setupUnitShiftRotation(malta.id, institutionId, {
     days: PRESET_CYCLE_4_DAY,
@@ -98,8 +103,10 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
     } else if (i < 70) {
       await repos.units.assignPersonnel(merkezKontrol.id, personnel.id);
       merkezPersonnelIds.push(personnel.id);
-    } else {
+    } else if (i < 80) {
       await repos.units.assignPersonnel(nizamiye.id, personnel.id);
+    } else {
+      await repos.units.assignPersonnel(idariBirim.id, personnel.id);
     }
   }
 
@@ -154,18 +161,29 @@ export async function seedDemoData(): Promise<{ institutionId: string }> {
   });
   await repos.auth.createUser({
     institutionId,
+    displayName: 'İkinci Yönetici',
+    role: 'INSTITUTION_ADMIN',
+    pin: '1234',
+  });
+  const managerUser = await repos.auth.createUser({
+    institutionId,
     displayName: 'Birim Yöneticisi',
     role: 'UNIT_MANAGER',
     personnelId: managerPersonnel.id,
     pin: '1234',
   });
+  await repos.auth.grantPermission(managerUser.id, 'personnel.manage', malta.id);
+  await repos.auth.grantPermission(managerUser.id, 'shifts.manage', malta.id);
+  await repos.auth.grantPermission(managerUser.id, 'presence.view', null);
+
   const staff = await repos.personnel.getById(staffPersonnel);
   await repos.auth.createUser({
     institutionId,
     displayName: staff ? `${staff.firstName} ${staff.lastName}` : 'Personel',
     role: 'PERSONNEL',
     personnelId: staffPersonnel,
-    pin: null,
+    pin: '1234',
+    canMessageAdmins: true,
   });
 
   const taskNobet = await repos.taskTypes.create(institutionId, 'Nöbet', 'NOBET');

@@ -6,6 +6,11 @@ import { getRepositories } from '@/shared/repositories';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
+import { PersonnelPhotoField } from '@/shared/components/PersonnelPhotoField';
+import {
+  deletePersonnelPhoto,
+  persistPersonnelPhoto,
+} from '@/features/personnel/services/personnelPhotoService';
 import { colors, spacing } from '@/shared/theme';
 
 export default function EditPersonnelScreen() {
@@ -16,6 +21,8 @@ export default function EditPersonnelScreen() {
   const [lastName, setLastName] = useState('');
   const [sicilNo, setSicilNo] = useState('');
   const [title, setTitle] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const [savedPhotoUri, setSavedPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const { data: personnel, isLoading } = useQuery({
@@ -29,24 +36,39 @@ export default function EditPersonnelScreen() {
       setLastName(personnel.lastName);
       setSicilNo(personnel.sicilNo);
       setTitle(personnel.title ?? '');
+      setPhotoUri(personnel.photoUri);
+      setSavedPhotoUri(personnel.photoUri);
     }
   }, [personnel]);
 
   const handleSave = async () => {
+    if (saving) return;
     if (!firstName.trim() || !lastName.trim() || !sicilNo.trim()) {
       Alert.alert('Eksik bilgi', 'Ad, soyad ve sicil no zorunludur.');
       return;
     }
     setSaving(true);
     try {
+      let nextPhotoUri = photoUri;
+
+      if (!photoUri && savedPhotoUri) {
+        await deletePersonnelPhoto(savedPhotoUri);
+        nextPhotoUri = null;
+      } else if (photoUri && photoUri !== savedPhotoUri) {
+        await deletePersonnelPhoto(savedPhotoUri);
+        nextPhotoUri = await persistPersonnelPhoto(id, photoUri);
+      }
+
       await getRepositories().personnel.update(id, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         sicilNo: sicilNo.trim(),
         title: title.trim() || undefined,
+        photoUri: nextPhotoUri,
       });
       await queryClient.invalidateQueries({ queryKey: ['personnel'] });
       await queryClient.invalidateQueries({ queryKey: ['personnel-detail', id] });
+      await queryClient.invalidateQueries({ queryKey: ['personnel-edit', id] });
       Alert.alert('Başarılı', 'Personel güncellendi.', [
         { text: 'Tamam', onPress: () => router.back() },
       ]);
@@ -64,6 +86,7 @@ export default function EditPersonnelScreen() {
         text: 'Pasifleştir',
         style: 'destructive',
         onPress: async () => {
+          await deletePersonnelPhoto(savedPhotoUri);
           await getRepositories().personnel.delete(id);
           await queryClient.invalidateQueries({ queryKey: ['personnel'] });
           router.replace('/(admin)/(tabs)/personnel');
@@ -76,6 +99,12 @@ export default function EditPersonnelScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <PersonnelPhotoField
+        firstName={firstName}
+        lastName={lastName}
+        photoUri={photoUri}
+        onPhotoChange={setPhotoUri}
+      />
       <Input label="Ad *" value={firstName} onChangeText={setFirstName} />
       <Input label="Soyad *" value={lastName} onChangeText={setLastName} />
       <Input label="Sicil No *" value={sicilNo} onChangeText={setSicilNo} />

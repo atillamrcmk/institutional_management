@@ -6,11 +6,11 @@ import { useAuthStore } from '@/features/auth/store/authStore';
 import { getRepositories } from '@/shared/repositories';
 import { Button } from '@/shared/components/Button';
 import { Input } from '@/shared/components/Input';
-import { Card, CardTitle } from '@/shared/components/Card';
+import { PersonnelListSection } from '@/shared/components/PersonnelListSection';
 import { LoadingState } from '@/shared/components/ErrorState';
-import type { Personnel, TaskType } from '@/shared/types';
+import type { TaskType } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
-import { getPersonnelFullName, todayDateString } from '@/shared/utils/id';
+import { todayDateString } from '@/shared/utils/id';
 
 export default function CreateAssignmentScreen() {
   const router = useRouter();
@@ -117,21 +117,15 @@ export default function CreateAssignmentScreen() {
         ))}
       </View>
 
-      <Text style={styles.section}>Personel Seç ({selectedPersonnel.length})</Text>
-      {data.personnel.slice(0, 30).map((person: Personnel) => (
-        <Pressable key={person.id} onPress={() => togglePersonnel(person.id)}>
-          <Card
-            style={
-              selectedPersonnel.includes(person.id)
-                ? { ...styles.personCard, ...styles.selected }
-                : styles.personCard
-            }
-          >
-            <CardTitle>{getPersonnelFullName(person)}</CardTitle>
-            <Text style={styles.sicil}>{person.sicilNo}</Text>
-          </Card>
-        </Pressable>
-      ))}
+      <PersonnelListSection
+        personnel={data.personnel}
+        title={`Personel Seç (${selectedPersonnel.length})`}
+        module="assignments"
+        defaultExpanded
+        selectionMode
+        selectedIds={selectedPersonnel}
+        onToggleSelect={togglePersonnel}
+      />
 
       <Button title="Kaydet" onPress={handleSave} loading={saving} />
     </ScrollView>
@@ -172,7 +166,4 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { ...typography.bodySmall, color: colors.text },
   chipTextActive: { color: '#fff' },
-  personCard: { marginBottom: spacing.xs },
-  selected: { borderColor: colors.primary, borderWidth: 2 },
-  sicil: { ...typography.caption, color: colors.textSecondary },
 });

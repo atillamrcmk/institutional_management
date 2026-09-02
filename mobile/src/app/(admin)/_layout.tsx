@@ -23,6 +23,9 @@ export default function AdminLayout() {
       <Stack.Screen name="shifts/[id]/add-personnel" options={{ title: 'Vardiyaya Personel Ekle' }} />
       <Stack.Screen name="assignments/create" options={{ title: 'Yeni Görev' }} />
       <Stack.Screen name="assignments/[id]" options={{ title: 'Görev Detay' }} />
+      <Stack.Screen name="messages/index" options={{ title: 'Mesajlar' }} />
+      <Stack.Screen name="messages/compose" options={{ title: 'Mesaj Gönder' }} />
+      <Stack.Screen name="messages/[id]" options={{ title: 'Mesaj Detay' }} />
     </Stack>
   );
 }

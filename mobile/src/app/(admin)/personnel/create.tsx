@@ -6,6 +6,10 @@ import { getRepositories } from '@/shared/repositories';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
+import { PersonnelPhotoField } from '@/shared/components/PersonnelPhotoField';
+import {
+  persistPersonnelPhoto,
+} from '@/features/personnel/services/personnelPhotoService';
 import { colors, spacing } from '@/shared/theme';
 
 export default function CreatePersonnelScreen() {
@@ -16,21 +20,30 @@ export default function CreatePersonnelScreen() {
   const [lastName, setLastName] = useState('');
   const [sicilNo, setSicilNo] = useState('');
   const [title, setTitle] = useState('');
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    if (saving) return;
     if (!institutionId || !firstName.trim() || !lastName.trim() || !sicilNo.trim()) {
       Alert.alert('Eksik bilgi', 'Ad, soyad ve sicil no zorunludur.');
       return;
     }
     setSaving(true);
     try {
-      const personnel = await getRepositories().personnel.create(institutionId, {
+      const repos = getRepositories();
+      const personnel = await repos.personnel.create(institutionId, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         sicilNo: sicilNo.trim(),
         title: title.trim() || undefined,
       });
+
+      if (photoUri) {
+        const savedPhotoUri = await persistPersonnelPhoto(personnel.id, photoUri);
+        await repos.personnel.update(personnel.id, { photoUri: savedPhotoUri });
+      }
+
       await queryClient.invalidateQueries({ queryKey: ['personnel'] });
       Alert.alert('Başarılı', 'Personel eklendi.', [
         { text: 'Tamam', onPress: () => router.replace(`/(admin)/personnel/${personnel.id}`) },
@@ -44,6 +57,12 @@ export default function CreatePersonnelScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <PersonnelPhotoField
+        firstName={firstName}
+        lastName={lastName}
+        photoUri={photoUri}
+        onPhotoChange={setPhotoUri}
+      />
       <Input label="Ad *" value={firstName} onChangeText={setFirstName} />
       <Input label="Soyad *" value={lastName} onChangeText={setLastName} />
       <Input label="Sicil No *" value={sicilNo} onChangeText={setSicilNo} />

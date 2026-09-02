@@ -2,10 +2,20 @@
 
 ## Mevcut Durum
 
-- **Depo:** Sıfırdan başlatıldı (önceki web/backend kodu yok).
-- **İlk MVP:** Tamamen cihaz üzerinde çalışan mobil prototip.
-- **Backend / PostgreSQL / uzak API:** İlk milestone'da **yok**.
-- **Kalıcı veri:** `expo-sqlite` (AsyncStorage yalnızca küçük ayarlar için).
+- **Mobil MVP:** Expo + yerel SQLite (çevrimiçi/çevrimdışı prototip).
+- **Sunucu:** Multi-tenant API — kurum başına ayrı PostgreSQL (`server/ARCHITECTURE.md`).
+- **Hedef:** Mobil repository’ler API’ye bağlanır; SQLite cache olarak kalabilir.
+
+## Backend (aktif)
+
+| Katman | Teknoloji |
+|--------|-----------|
+| API | Node.js, Express, TypeScript |
+| Control DB | PostgreSQL (`personel_planla_control`) |
+| Tenant DB | PostgreSQL (`pp_t_<slug>` her kurum için) |
+| Auth | JWT + bcrypt |
+
+Kurum oluşturma → `CREATE DATABASE` → tenant şeması → owner hesabı.
 
 ## Ürün Vizyonu
 

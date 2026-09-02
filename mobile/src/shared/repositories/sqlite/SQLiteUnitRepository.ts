@@ -17,6 +17,9 @@ function mapUnit(row: Record<string, unknown>): Unit {
     name: row.name as string,
     minimumStaff: row.minimum_staff as number,
     managerPersonnelId: (row.manager_personnel_id as string) ?? null,
+    workScheduleType: (row.work_schedule_type as Unit['workScheduleType']) ?? 'OFFICE',
+    officeStartTime: (row.office_start_time as string) ?? '08:00',
+    officeEndTime: (row.office_end_time as string) ?? '17:00',
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
@@ -30,6 +33,7 @@ function mapPersonnel(row: Record<string, unknown>): Personnel {
     lastName: row.last_name as string,
     sicilNo: row.sicil_no as string,
     title: (row.title as string) ?? null,
+    photoUri: (row.photo_uri as string) ?? null,
     status: row.status as Personnel['status'],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -74,14 +78,17 @@ export class SQLiteUnitRepository implements UnitRepository {
     const id = generateId();
     const ts = nowIso();
     await this.db.runAsync(
-      `INSERT INTO units (id, institution_id, parent_id, name, minimum_staff, manager_personnel_id, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO units (id, institution_id, parent_id, name, minimum_staff, manager_personnel_id, work_schedule_type, office_start_time, office_end_time, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       id,
       institutionId,
       input.parentId ?? null,
       input.name,
       input.minimumStaff ?? 0,
       input.managerPersonnelId ?? null,
+      input.workScheduleType ?? 'OFFICE',
+      input.officeStartTime ?? '08:00',
+      input.officeEndTime ?? '17:00',
       ts,
       ts,
     );
@@ -103,15 +110,21 @@ export class SQLiteUnitRepository implements UnitRepository {
         input.managerPersonnelId !== undefined
           ? input.managerPersonnelId
           : existing.managerPersonnelId,
+      workScheduleType: input.workScheduleType ?? existing.workScheduleType,
+      officeStartTime: input.officeStartTime ?? existing.officeStartTime,
+      officeEndTime: input.officeEndTime ?? existing.officeEndTime,
       updatedAt: nowIso(),
     };
 
     await this.db.runAsync(
-      `UPDATE units SET name = ?, parent_id = ?, minimum_staff = ?, manager_personnel_id = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE units SET name = ?, parent_id = ?, minimum_staff = ?, manager_personnel_id = ?, work_schedule_type = ?, office_start_time = ?, office_end_time = ?, updated_at = ? WHERE id = ?`,
       updated.name,
       updated.parentId,
       updated.minimumStaff,
       updated.managerPersonnelId,
+      updated.workScheduleType,
+      updated.officeStartTime,
+      updated.officeEndTime,
       updated.updatedAt,
       id,
     );
@@ -162,15 +175,16 @@ export class SQLiteUnitRepository implements UnitRepository {
   }
 
   async assignPersonnel(unitId: string, personnelId: string): Promise<PersonnelUnitHistory> {
-    const current = await this.db.getFirstAsync<Record<string, unknown>>(
-      `SELECT * FROM personnel_unit_history WHERE personnel_id = ? AND ended_at IS NULL`,
-      personnelId,
-    );
-    if (current) {
-      await this.db.runAsync(
-        'UPDATE personnel_unit_history SET ended_at = ? WHERE id = ?',
-        nowIso(),
-        current.id as string,
+    const unit = await this.getById(unitId);
+    if (!unit) throw new Error('Birim bulunamadı');
+
+    const currentUnit = await this.getCurrentUnitForPersonnel(personnelId);
+    if (currentUnit) {
+      if (currentUnit.id === unitId) {
+        throw new Error('Personel zaten bu birimde.');
+      }
+      throw new Error(
+        `Bu personel "${currentUnit.name}" biriminde görevli. Önce o birimden çıkarın.`,
       );
     }
 
@@ -212,6 +226,36 @@ export class SQLiteUnitRepository implements UnitRepository {
        WHERE puh.unit_id = ? AND puh.ended_at IS NULL AND p.status = 'ACTIVE'
        ORDER BY p.last_name, p.first_name`,
       unitId,
+    );
+    return rows.map(mapPersonnel);
+  }
+
+  async getUnassignedPersonnel(institutionId: string, query?: string): Promise<Personnel[]> {
+    const baseSql = `
+      SELECT p.* FROM personnel p
+      WHERE p.institution_id = ? AND p.status = 'ACTIVE'
+      AND NOT EXISTS (
+        SELECT 1 FROM personnel_unit_history puh
+        WHERE puh.personnel_id = p.id AND puh.ended_at IS NULL
+      )`;
+
+    if (query?.trim()) {
+      const q = `%${query.trim()}%`;
+      const rows = await this.db.getAllAsync<Record<string, unknown>>(
+        `${baseSql}
+         AND (p.first_name LIKE ? OR p.last_name LIKE ? OR p.sicil_no LIKE ?)
+         ORDER BY p.last_name, p.first_name`,
+        institutionId,
+        q,
+        q,
+        q,
+      );
+      return rows.map(mapPersonnel);
+    }
+
+    const rows = await this.db.getAllAsync<Record<string, unknown>>(
+      `${baseSql} ORDER BY p.last_name, p.first_name`,
+      institutionId,
     );
     return rows.map(mapPersonnel);
   }

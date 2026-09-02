@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/features/auth/store/authStore';
 import { getRepositories } from '@/shared/repositories';
 import { calculateShiftForDate, formatShiftTime } from '@/features/shifts/engine/shiftCalculator';
+import { getOfficeShiftForDate } from '@/features/units/services/officeSchedule';
 import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { ShiftBadge } from '@/shared/components/Badge';
 import { LoadingState } from '@/shared/components/ErrorState';
@@ -10,7 +11,7 @@ import { Screen } from '@/shared/components/layout/Screen';
 import { PageHeader } from '@/shared/components/layout/PageHeader';
 import { Section } from '@/shared/components/layout/Section';
 import { colors, spacing, typography } from '@/shared/theme';
-import { todayDateString } from '@/shared/utils/id';
+import { addDaysToDateString, todayDateString } from '@/shared/utils/id';
 
 export default function PersonnelHomeScreen() {
   const user = useAuthStore((s) => s.user)!;
@@ -22,13 +23,15 @@ export default function PersonnelHomeScreen() {
       const repos = getRepositories();
       const personnel = await repos.personnel.getById(user.personnelId);
       const unit = await repos.units.getCurrentUnitForPersonnel(user.personnelId);
+      const today = todayDateString();
+      const tomorrow = addDaysToDateString(today, 1);
       const shiftData = await repos.shifts.getActiveAssignmentForPersonnel(
         user.personnelId,
-        todayDateString(),
+        today,
       );
       const taskAssignment = await repos.assignments.getActiveForPersonnelOnDate(
         user.personnelId,
-        todayDateString(),
+        today,
       );
       let todayShift = null;
       let tomorrowShift = null;
@@ -36,16 +39,16 @@ export default function PersonnelHomeScreen() {
         todayShift = calculateShiftForDate(
           shiftData.patternDays,
           shiftData.group.cycleStartDate,
-          todayDateString(),
+          today,
         );
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const tomorrowStr = tomorrow.toISOString().slice(0, 10);
         tomorrowShift = calculateShiftForDate(
           shiftData.patternDays,
           shiftData.group.cycleStartDate,
-          tomorrowStr,
+          tomorrow,
         );
+      } else if (unit?.workScheduleType === 'OFFICE') {
+        todayShift = getOfficeShiftForDate(unit, today);
+        tomorrowShift = getOfficeShiftForDate(unit, tomorrow);
       }
       return { personnel, unit, shiftData, todayShift, tomorrowShift, taskAssignment };
     },
@@ -60,7 +63,7 @@ export default function PersonnelHomeScreen() {
     <Screen scroll>
       <PageHeader
         title={`Merhaba, ${data.personnel.firstName}`}
-        subtitle="Bugünkü vardiya ve görev özeti"
+        subtitle="Bugünkü mesai ve görev özeti"
         module="dashboard"
       />
 
@@ -77,6 +80,15 @@ export default function PersonnelHomeScreen() {
                   <ShiftBadge shiftType={data.todayShift.shiftType} />
                 </>
               ) : null}
+              <Text style={styles.unit}>{data.unit?.name ?? '—'}</Text>
+            </>
+          ) : data.todayShift ? (
+            <>
+              <CardTitle>Mesai</CardTitle>
+              <CardSubtitle>
+                {formatShiftTime(data.todayShift.startTime, data.todayShift.endTime)}
+              </CardSubtitle>
+              <ShiftBadge shiftType={data.todayShift.shiftType} />
               <Text style={styles.unit}>{data.unit?.name ?? '—'}</Text>
             </>
           ) : (

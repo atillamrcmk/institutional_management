@@ -4,6 +4,7 @@ import { getDatabase } from '@/shared/database/database';
 import { runMigrations } from '@/shared/database/migrations';
 import { initRepositories } from '@/shared/repositories';
 import { useAuthStore } from '@/features/auth/store/authStore';
+import { registerPushNotifications } from '@/features/messaging/services/pushNotificationService';
 import { LoadingState } from '@/shared/components/ErrorState';
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ export function useAppReady() {
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [isReady, setIsReady] = useState(false);
   const initializeAuth = useAuthStore((s) => s.initialize);
+  const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
     async function init() {
@@ -39,6 +41,11 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     }
     init();
   }, [initializeAuth]);
+
+  useEffect(() => {
+    if (!isReady || !user) return;
+    void registerPushNotifications(user.id);
+  }, [isReady, user?.id]);
 
   if (!isReady) {
     return <LoadingState message="Uygulama hazırlanıyor..." />;

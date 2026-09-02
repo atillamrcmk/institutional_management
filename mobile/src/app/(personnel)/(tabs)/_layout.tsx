@@ -16,9 +16,9 @@ export default function PersonnelTabLayout() {
       <Tabs.Screen
         name="shift"
         options={{
-          title: 'Vardiyam',
+          title: 'Kurumda',
           tabBarIcon: ({ color, focused }) => (
-            <TabBarIcon name="time-outline" color={color} focused={focused} />
+            <TabBarIcon name="people-outline" color={color} focused={focused} />
           ),
         }}
       />
@@ -37,6 +37,15 @@ export default function PersonnelTabLayout() {
           title: 'Takvim',
           tabBarIcon: ({ color, focused }) => (
             <TabBarIcon name="calendar-outline" color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Mesajlar',
+          tabBarIcon: ({ color, focused }) => (
+            <TabBarIcon name="mail-outline" color={color} focused={focused} />
           ),
         }}
       />

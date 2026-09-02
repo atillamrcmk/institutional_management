@@ -5,9 +5,9 @@ import { getRepositories } from '@/shared/repositories';
 import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
-import type { AssignmentStatus, Personnel } from '@/shared/types';
+import { PersonnelListSection } from '@/shared/components/PersonnelListSection';
+import type { AssignmentStatus } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
-import { getPersonnelFullName } from '@/shared/utils/id';
 import { getAssignmentStatusLabel } from '@/shared/utils/labels';
 
 export default function AssignmentDetailScreen() {
@@ -55,18 +55,13 @@ export default function AssignmentDetailScreen() {
       ) : null}
 
       <Card>
-        <CardTitle>
-          Atanan Personel ({personnel.length}/{assignment.requiredPersonnelCount})
-        </CardTitle>
-        {personnel.length === 0 ? (
-          <CardSubtitle>Henüz personel atanmadı</CardSubtitle>
-        ) : (
-          personnel.map((p: Personnel) => (
-            <Text key={p.id} style={styles.personRow}>
-              {getPersonnelFullName(p)} · {p.sicilNo}
-            </Text>
-          ))
-        )}
+        <PersonnelListSection
+          personnel={personnel}
+          title={`Atanan Personel (${personnel.length}/${assignment.requiredPersonnelCount})`}
+          emptyMessage="Henüz personel atanmadı"
+          module="assignments"
+          onPressPersonnel={(person) => router.push(`/(admin)/personnel/${person.id}`)}
+        />
       </Card>
 
       <View style={styles.actions}>

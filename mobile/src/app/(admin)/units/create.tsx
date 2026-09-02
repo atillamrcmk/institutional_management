@@ -8,7 +8,7 @@ import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
-import type { Unit } from '@/shared/types';
+import type { Unit, UnitWorkScheduleType } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
 
 export default function CreateUnitScreen() {
@@ -18,6 +18,9 @@ export default function CreateUnitScreen() {
   const [name, setName] = useState('');
   const [minimumStaff, setMinimumStaff] = useState('0');
   const [parentId, setParentId] = useState<string | null>(null);
+  const [workScheduleType, setWorkScheduleType] = useState<UnitWorkScheduleType>('OFFICE');
+  const [officeStartTime, setOfficeStartTime] = useState('08:00');
+  const [officeEndTime, setOfficeEndTime] = useState('17:00');
   const [saving, setSaving] = useState(false);
 
   const { data: units, isLoading } = useQuery({
@@ -42,6 +45,9 @@ export default function CreateUnitScreen() {
         name: name.trim(),
         parentId,
         minimumStaff: min,
+        workScheduleType,
+        officeStartTime: workScheduleType === 'OFFICE' ? officeStartTime : undefined,
+        officeEndTime: workScheduleType === 'OFFICE' ? officeEndTime : undefined,
       });
       await queryClient.invalidateQueries({ queryKey: ['units'] });
       Alert.alert('Başarılı', 'Birim oluşturuldu.', [
@@ -58,10 +64,55 @@ export default function CreateUnitScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Input label="Birim Adı *" value={name} onChangeText={setName} placeholder="Malta" />
-      <Text style={styles.hint}>
-        Birim oluşturduktan sonra vardiyaları kurup personel ekleyebilirsiniz.
-      </Text>
+      <Input label="Birim Adı *" value={name} onChangeText={setName} placeholder="İdari Birim" />
+
+      <Text style={styles.label}>Çalışma Şekli *</Text>
+      <View style={styles.scheduleRow}>
+        <Pressable
+          onPress={() => setWorkScheduleType('OFFICE')}
+          style={[styles.scheduleChip, workScheduleType === 'OFFICE' && styles.chipActive]}
+        >
+          <Text style={[styles.chipText, workScheduleType === 'OFFICE' && styles.chipTextActive]}>
+            Mesai (8–5)
+          </Text>
+          <Text style={styles.chipHint}>Vardiya gerekmez</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setWorkScheduleType('SHIFT')}
+          style={[styles.scheduleChip, workScheduleType === 'SHIFT' && styles.chipActive]}
+        >
+          <Text style={[styles.chipText, workScheduleType === 'SHIFT' && styles.chipTextActive]}>
+            Vardiyalı
+          </Text>
+          <Text style={styles.chipHint}>Döngü + vardiya grubu</Text>
+        </Pressable>
+      </View>
+
+      {workScheduleType === 'OFFICE' ? (
+        <View style={styles.timeRow}>
+          <View style={styles.timeField}>
+            <Input
+              label="Mesai Başlangıç"
+              value={officeStartTime}
+              onChangeText={setOfficeStartTime}
+              placeholder="08:00"
+            />
+          </View>
+          <View style={styles.timeField}>
+            <Input
+              label="Mesai Bitiş"
+              value={officeEndTime}
+              onChangeText={setOfficeEndTime}
+              placeholder="17:00"
+            />
+          </View>
+        </View>
+      ) : (
+        <Text style={styles.hint}>
+          Birim oluşturduktan sonra vardiyaları kurup personel ekleyebilirsiniz.
+        </Text>
+      )}
+
       <Input
         label="Minimum Kadro"
         value={minimumStaff}
@@ -95,7 +146,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
   label: { ...typography.label, color: colors.textSecondary },
-  hint: { ...typography.bodySmall, color: colors.textMuted, marginBottom: spacing.xs },
+  hint: { ...typography.bodySmall, color: colors.textMuted },
+  scheduleRow: { flexDirection: 'row', gap: spacing.sm },
+  scheduleChip: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    gap: 2,
+  },
   chip: {
     padding: spacing.md,
     borderRadius: 12,
@@ -106,4 +167,7 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
   chipText: { ...typography.body, color: colors.text },
   chipTextActive: { color: colors.primary, fontWeight: '600' },
+  chipHint: { ...typography.caption, color: colors.textMuted },
+  timeRow: { flexDirection: 'row', gap: spacing.sm },
+  timeField: { flex: 1 },
 });

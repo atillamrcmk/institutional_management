@@ -1,12 +1,50 @@
 import { calculateShiftForDate, isWorkingShift } from '@/features/shifts/engine/shiftCalculator';
+import { getOfficeShiftForDate } from '@/features/units/services/officeSchedule';
 import { getRepositories } from '@/shared/repositories';
-import type { CalculatedShift, PersonnelPresence, ShiftGroup, Unit } from '@/shared/types';
+import type { CalculatedShift, Personnel, PersonnelPresence, ShiftGroup, Unit } from '@/shared/types';
 import { todayDateString } from '@/shared/utils/id';
 
 export interface PresenceFilters {
   unitId?: string;
   shiftGroupId?: string;
   status?: 'all' | 'on_duty' | 'on_assignment' | 'absent';
+}
+
+export interface OfficeUnitSummary {
+  unitId: string;
+  unitName: string;
+  startTime: string;
+  endTime: string;
+  personnel: Personnel[];
+}
+
+export async function getOfficeUnitsSummary(
+  institutionId: string,
+  date: string = todayDateString(),
+): Promise<OfficeUnitSummary[]> {
+  const repos = getRepositories();
+  const units = await repos.units.getAll(institutionId);
+  const results: OfficeUnitSummary[] = [];
+
+  for (const unit of units) {
+    if (unit.workScheduleType !== 'OFFICE') continue;
+
+    const officeShift = getOfficeShiftForDate(unit, date);
+    if (!isWorkingShift(officeShift.shiftType)) continue;
+
+    const personnel = await repos.units.getActivePersonnelForUnit(unit.id);
+    if (personnel.length === 0) continue;
+
+    results.push({
+      unitId: unit.id,
+      unitName: unit.name,
+      startTime: officeShift.startTime!,
+      endTime: officeShift.endTime!,
+      personnel,
+    });
+  }
+
+  return results.sort((a, b) => a.unitName.localeCompare(b.unitName, 'tr'));
 }
 
 export async function getPresenceForDate(
@@ -36,6 +74,8 @@ export async function getPresenceForDate(
     if (shiftData) {
       shift = calculateShiftForDate(shiftData.patternDays, shiftData.group.cycleStartDate, date);
       shiftGroup = shiftData.group;
+    } else if (unit?.workScheduleType === 'OFFICE') {
+      shift = getOfficeShiftForDate(unit, date);
     }
 
     let status: PersonnelPresence['status'] = 'ON_DUTY';
@@ -100,7 +140,6 @@ export async function getDashboardStats(institutionId: string, date: string = to
 }
 
 async function getActiveUnitsSummary(institutionId: string, date: string) {
-  const repos = getRepositories();
   const presence = await getPresenceForDate(institutionId, date);
   const unitMap = new Map<string, { unit: Unit; count: number; shiftName?: string }>();
 
@@ -113,7 +152,7 @@ async function getActiveUnitsSummary(institutionId: string, date: string) {
       unitMap.set(p.unit.id, {
         unit: p.unit,
         count: 1,
-        shiftName: p.shiftGroup?.name,
+        shiftName: p.shiftGroup?.name ?? (p.unit.workScheduleType === 'OFFICE' ? 'Mesai' : undefined),
       });
     }
   }

@@ -1,5 +1,5 @@
 import { getRepositories } from '@/shared/repositories';
-import type { ShiftGroup, ShiftType } from '@/shared/types';
+import type { ShiftGroup, ShiftType, UnitWorkScheduleType } from '@/shared/types';
 import { todayDateString } from '@/shared/utils/id';
 
 export const DEFAULT_GROUP_NAMES = ['A', 'B', 'C', 'D'];
@@ -70,6 +70,8 @@ export async function setupUnitShiftRotation(
     throw new Error('Bu birimde zaten vardiya var. Yeni vardiya için "+ Vardiya Ekle" kullanın.');
   }
 
+  await repos.units.update(unitId, { workScheduleType: 'SHIFT' });
+
   const patternDays = options.days.map((day) => ({
     shiftType: day.shiftType,
     startTime: day.shiftType !== 'OFF' ? day.startTime : undefined,
@@ -114,6 +116,8 @@ export async function addShiftGroupToUnit(
     throw new Error('Önce birim için döngü ve ilk vardiyayı oluşturun.');
   }
 
+  await repos.units.update(unitId, { workScheduleType: 'SHIFT' });
+
   return repos.shifts.createGroup(
     unitId,
     input.name.trim(),
@@ -123,6 +127,7 @@ export async function addShiftGroupToUnit(
 }
 
 export interface UnitSetupStatus {
+  workScheduleType: UnitWorkScheduleType;
   hasShifts: boolean;
   shiftCount: number;
   hasPersonnel: boolean;
@@ -135,6 +140,7 @@ export interface UnitSetupStatus {
 
 export async function getUnitSetupStatus(unitId: string): Promise<UnitSetupStatus> {
   const repos = getRepositories();
+  const unit = await repos.units.getById(unitId);
   const groups = await repos.shifts.getGroupsByUnit(unitId);
   const personnel = await repos.units.getActivePersonnelForUnit(unitId);
 
@@ -147,15 +153,22 @@ export async function getUnitSetupStatus(unitId: string): Promise<UnitSetupStatu
   const hasShifts = groups.length > 0;
   const hasPersonnel = personnel.length > 0;
   const allShiftsHavePersonnel = hasShifts && shiftsWithPersonnel === groups.length;
+  const workScheduleType = unit?.workScheduleType ?? 'OFFICE';
+
+  const isComplete =
+    workScheduleType === 'OFFICE'
+      ? hasPersonnel
+      : hasPersonnel && (!hasShifts || allShiftsHavePersonnel);
 
   return {
+    workScheduleType,
     hasShifts,
     shiftCount: groups.length,
     hasPersonnel,
     personnelCount: personnel.length,
     shiftsWithPersonnel,
     allShiftsHavePersonnel,
-    isComplete: hasShifts && hasPersonnel && allShiftsHavePersonnel,
+    isComplete,
     patternId: groups[0]?.patternId ?? null,
   };
 }

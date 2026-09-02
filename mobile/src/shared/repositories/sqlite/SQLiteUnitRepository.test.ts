@@ -5,6 +5,10 @@ import * as m002 from '@/shared/database/migrations/migration_002_shift_engine';
 import * as m003 from '@/shared/database/migrations/migration_003_assignments';
 import * as m004 from '@/shared/database/migrations/migration_004_shift_group_offset';
 import * as m005 from '@/shared/database/migrations/migration_005_shift_group_cycle_start';
+import * as m006 from '@/shared/database/migrations/migration_006_unit_work_schedule';
+import * as m007 from '@/shared/database/migrations/migration_007_personnel_photo';
+import * as m008 from '@/shared/database/migrations/migration_008_personnel_unique_sicil';
+import * as m009 from '@/shared/database/migrations/migration_009_user_grants';
 import { PRESET_CYCLE_4_DAY } from '@/features/shifts/constants/shiftDefaults';
 import { initRepositories } from '@/shared/repositories';
 
@@ -61,7 +65,7 @@ async function runMigrationsOn(db: SQLiteDatabaseAdapter): Promise<void> {
       applied_at TEXT NOT NULL
     );
   `);
-  for (const migration of [m001, m002, m003, m004, m005]) {
+  for (const migration of [m001, m002, m003, m004, m005, m006, m007, m008, m009]) {
     await migration.up(db);
     await db.runAsync(
       'INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',
@@ -119,5 +123,55 @@ describe('SQLiteUnitRepository.delete', () => {
     await repos.units.create(institution.id, { name: 'Malta', parentId: parent.id });
 
     await expect(repos.units.delete(parent.id)).rejects.toThrow(/alt birim/i);
+  });
+});
+
+describe('SQLiteUnitRepository.assignPersonnel', () => {
+  it('blocks assigning personnel who already belong to another unit', async () => {
+    const SQL = await initSqlJs();
+    const db = new TestDatabase(new SQL.Database());
+    await runMigrationsOn(db);
+    const repos = initRepositories(db);
+
+    const institution = await repos.institution.create('Test Kurum');
+    const malta = await repos.units.create(institution.id, { name: 'Malta' });
+    const merkez = await repos.units.create(institution.id, { name: 'Merkez Kontrol' });
+    const personnel = await repos.personnel.create(institution.id, {
+      firstName: 'Ali',
+      lastName: 'Veli',
+      sicilNo: 'T-001',
+    });
+
+    await repos.units.assignPersonnel(malta.id, personnel.id);
+
+    await expect(repos.units.assignPersonnel(merkez.id, personnel.id)).rejects.toThrow(
+      /Malta.*biriminde görevli/i,
+    );
+  });
+
+  it('returns only personnel without an active unit assignment', async () => {
+    const SQL = await initSqlJs();
+    const db = new TestDatabase(new SQL.Database());
+    await runMigrationsOn(db);
+    const repos = initRepositories(db);
+
+    const institution = await repos.institution.create('Test Kurum');
+    const unit = await repos.units.create(institution.id, { name: 'Malta' });
+    const assigned = await repos.personnel.create(institution.id, {
+      firstName: 'Ali',
+      lastName: 'Atanmış',
+      sicilNo: 'T-001',
+    });
+    const unassigned = await repos.personnel.create(institution.id, {
+      firstName: 'Ayşe',
+      lastName: 'Boşta',
+      sicilNo: 'T-002',
+    });
+
+    await repos.units.assignPersonnel(unit.id, assigned.id);
+
+    const available = await repos.units.getUnassignedPersonnel(institution.id);
+    expect(available).toHaveLength(1);
+    expect(available[0].id).toBe(unassigned.id);
   });
 });

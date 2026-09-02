@@ -5,6 +5,11 @@ import * as m002 from '@/shared/database/migrations/migration_002_shift_engine';
 import * as m003 from '@/shared/database/migrations/migration_003_assignments';
 import * as m004 from '@/shared/database/migrations/migration_004_shift_group_offset';
 import * as m005 from '@/shared/database/migrations/migration_005_shift_group_cycle_start';
+import * as m006 from '@/shared/database/migrations/migration_006_unit_work_schedule';
+import * as m007 from '@/shared/database/migrations/migration_007_personnel_photo';
+import * as m008 from '@/shared/database/migrations/migration_008_personnel_unique_sicil';
+import * as m009 from '@/shared/database/migrations/migration_009_user_grants';
+import * as m010 from '@/shared/database/migrations/migration_010_messaging';
 import { initRepositories } from '@/shared/repositories';
 import { seedDemoData } from './seedDemoData';
 
@@ -15,7 +20,7 @@ async function runMigrationsOn(db: SQLiteDatabaseAdapter): Promise<void> {
       applied_at TEXT NOT NULL
     );
   `);
-  for (const migration of [m001, m002, m003, m004, m005]) {
+  for (const migration of [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010]) {
     await migration.up(db);
     await db.runAsync(
       'INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',
@@ -88,6 +93,6 @@ describe('seedDemoData', () => {
     expect(personnel.length).toBeGreaterThanOrEqual(90);
 
     const users = await repos.auth.getDemoUsers(institutionId);
-    expect(users).toHaveLength(3);
+    expect(users).toHaveLength(4);
   });
 });

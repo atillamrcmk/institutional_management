@@ -4,6 +4,7 @@ import type {
   AssignmentRepository,
   AuthRepository,
   InstitutionRepository,
+  MessageRepository,
   PersonnelRepository,
   ShiftRepository,
   TaskTypeRepository,
@@ -13,6 +14,7 @@ import { SQLiteAbsenceRepository } from './sqlite/SQLiteAbsenceRepository';
 import { SQLiteAssignmentRepository } from './sqlite/SQLiteAssignmentRepository';
 import { SQLiteAuthRepository } from './sqlite/SQLiteAuthRepository';
 import { SQLiteInstitutionRepository } from './sqlite/SQLiteInstitutionRepository';
+import { SQLiteMessageRepository } from './sqlite/SQLiteMessageRepository';
 import { SQLitePersonnelRepository } from './sqlite/SQLitePersonnelRepository';
 import { SQLiteShiftRepository } from './sqlite/SQLiteShiftRepository';
 import { SQLiteTaskTypeRepository } from './sqlite/SQLiteTaskTypeRepository';
@@ -27,6 +29,7 @@ export interface Repositories {
   institution: InstitutionRepository;
   taskTypes: TaskTypeRepository;
   assignments: AssignmentRepository;
+  messages: MessageRepository;
 }
 
 let repositories: Repositories | null = null;
@@ -41,6 +44,7 @@ export function initRepositories(db: SQLiteDatabaseAdapter): Repositories {
     institution: new SQLiteInstitutionRepository(db),
     taskTypes: new SQLiteTaskTypeRepository(db),
     assignments: new SQLiteAssignmentRepository(db),
+    messages: new SQLiteMessageRepository(db),
   };
   return repositories;
 }

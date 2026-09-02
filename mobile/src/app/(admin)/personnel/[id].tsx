@@ -36,6 +36,7 @@ export default function PersonnelDetailScreen() {
       if (!personnel) return null;
 
       const unit = await repos.units.getCurrentUnitForPersonnel(id);
+      const linkedUser = await repos.auth.getUserByPersonnelId(id);
       const shiftData = await repos.shifts.getActiveAssignmentForPersonnel(id, todayDateString());
       const absences = await repos.absences.getByPersonnel(id);
       const isAbsent = await repos.absences.isAbsentOnDate(id, todayDateString());
@@ -50,7 +51,7 @@ export default function PersonnelDetailScreen() {
         );
       }
 
-      return { personnel, unit, shiftData, shift, absences, isAbsent, taskAssignment };
+      return { personnel, unit, linkedUser, shiftData, shift, absences, isAbsent, taskAssignment };
     },
   });
 
@@ -106,14 +107,14 @@ export default function PersonnelDetailScreen() {
     );
   }
 
-  const { personnel, unit, shiftData, shift, isAbsent, taskAssignment } = data;
+  const { personnel, unit, linkedUser, shiftData, shift, isAbsent, taskAssignment } = data;
   const name = getPersonnelFullName(personnel);
   const status = isAbsent ? 'ABSENT' : taskAssignment ? 'ON_ASSIGNMENT' : shift && shift.shiftType !== 'OFF' ? 'ON_DUTY' : 'OFF';
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Avatar name={name} size={64} />
+        <Avatar name={name} size={64} photoUri={personnel.photoUri} />
         <Text style={styles.name}>{name}</Text>
         <Text style={styles.meta}>{personnel.sicilNo} · {personnel.title ?? '—'}</Text>
         <StatusBadge status={status} />
@@ -138,6 +139,30 @@ export default function PersonnelDetailScreen() {
           </View>
         ) : null}
       </Card>
+
+      {linkedUser ? (
+        <Card>
+          <CardTitle>Mesajlaşma</CardTitle>
+          <InfoRow
+            label="Yöneticilere mesaj"
+            value={linkedUser.canMessageAdmins ? 'Açık' : 'Kapalı'}
+          />
+          <Button
+            title={
+              linkedUser.canMessageAdmins
+                ? 'Yönetici mesajını kapat'
+                : 'Yöneticilere mesaj izni ver'
+            }
+            variant="outline"
+            onPress={async () => {
+              await getRepositories().auth.updateUser(linkedUser.id, {
+                canMessageAdmins: !linkedUser.canMessageAdmins,
+              });
+              await refetch();
+            }}
+          />
+        </Card>
+      ) : null}
 
       <Card>
         <View style={styles.absenceHeader}>

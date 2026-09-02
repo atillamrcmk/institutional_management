@@ -1,0 +1,1 @@
+export { syncMessageToServer } from './pushNotificationService';

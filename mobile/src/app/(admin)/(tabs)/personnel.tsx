@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { getRepositories } from '@/shared/repositories';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
+import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
 import { EmptyState } from '@/shared/components/EmptyState';
@@ -18,22 +19,22 @@ export default function PersonnelListScreen() {
   const router = useRouter();
   const institutionId = useInstitutionId();
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['personnel', institutionId, search],
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['personnel', institutionId, debouncedSearch],
     queryFn: async () => {
       const repos = getRepositories();
-      if (search.trim()) {
-        return repos.personnel.search(institutionId!, search);
+      if (debouncedSearch.trim()) {
+        return repos.personnel.search(institutionId!, debouncedSearch);
       }
       return repos.personnel.getAll(institutionId!);
     },
     enabled: !!institutionId,
+    placeholderData: keepPreviousData,
   });
 
-  if (isLoading) {
-    return <LoadingState message="Personel listesi yükleniyor..." />;
-  }
+  const showInitialLoading = isLoading && !data;
 
   return (
     <View style={styles.container}>
@@ -51,38 +52,46 @@ export default function PersonnelListScreen() {
           />
         </ScreenToolbar>
       </View>
-      <FlatList
-        data={data}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
-        ListEmptyComponent={
-          <EmptyState
-            title="Personel bulunamadı"
-            message="Yeni personel ekleyin."
-            module="personnel"
-            actionLabel="Personel Ekle"
-            onAction={() => router.push('/(admin)/personnel/create')}
-          />
-        }
-        renderItem={({ item }) => (
-          <Card
-            onPress={() => router.push(`/(admin)/personnel/${item.id}`)}
-            module="personnel"
-            variant="elevated"
-            style={styles.card}
-          >
-            <View style={styles.row}>
-              <Avatar name={getPersonnelFullName(item)} size={44} />
-              <View style={styles.info}>
-                <CardTitle>{getPersonnelFullName(item)}</CardTitle>
-                <CardSubtitle>
-                  {item.sicilNo} · {item.title ?? '—'}
-                </CardSubtitle>
+
+      {showInitialLoading ? (
+        <LoadingState message="Personel listesi yükleniyor..." />
+      ) : (
+        <FlatList
+          data={data}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.list}
+          keyboardShouldPersistTaps="handled"
+          ListEmptyComponent={
+            <EmptyState
+              title={isFetching ? 'Aranıyor...' : 'Personel bulunamadı'}
+              message={isFetching ? undefined : 'Yeni personel ekleyin.'}
+              module="personnel"
+              actionLabel={isFetching ? undefined : 'Personel Ekle'}
+              onAction={
+                isFetching ? undefined : () => router.push('/(admin)/personnel/create')
+              }
+            />
+          }
+          renderItem={({ item }) => (
+            <Card
+              onPress={() => router.push(`/(admin)/personnel/${item.id}`)}
+              module="personnel"
+              variant="elevated"
+              style={styles.card}
+            >
+              <View style={styles.row}>
+                <Avatar name={getPersonnelFullName(item)} size={44} photoUri={item.photoUri} />
+                <View style={styles.info}>
+                  <CardTitle>{getPersonnelFullName(item)}</CardTitle>
+                  <CardSubtitle>
+                    {item.sicilNo} · {item.title ?? '—'}
+                  </CardSubtitle>
+                </View>
               </View>
-            </View>
-          </Card>
-        )}
-      />
+            </Card>
+          )}
+        />
+      )}
     </View>
   );
 }

@@ -19,7 +19,7 @@ export function PersonnelCard({ item, onPress }: PersonnelCardProps) {
       onPress={onPress}
       style={({ pressed }) => [styles.card, shadows.sm, pressed && styles.pressed]}
     >
-      <Avatar name={name} size={52} />
+      <Avatar name={name} size={52} photoUri={item.personnel.photoUri} />
       <View style={styles.content}>
         <Text style={styles.name}>{name}</Text>
         <Text style={styles.meta}>

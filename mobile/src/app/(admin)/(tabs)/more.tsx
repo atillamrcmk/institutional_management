@@ -11,6 +11,7 @@ import { Section } from '@/shared/components/layout/Section';
 import { ModuleCard } from '@/shared/components/layout/ModuleCard';
 
 const menuItems = [
+  { title: 'Mesajlar', subtitle: 'Personel ve birimlere duyuru gönder', route: '/(admin)/messages', module: 'dashboard' as const },
   { title: 'Birimler', subtitle: 'Birim, vardiya ve personel kurulumu', route: '/(admin)/units', module: 'units' as const },
   { title: 'Bugünkü Vardiyalar', subtitle: 'Kim görevde?', route: '/(admin)/shifts', module: 'shifts' as const },
   { title: 'Şu An Kurumda', subtitle: 'Anlık personel durumu', route: '/(admin)/presence', module: 'presence' as const },

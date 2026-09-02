@@ -68,6 +68,26 @@ export default function LoginScreen() {
   const userList = users?.users ?? [];
   const hasUsers = userList.length > 0;
 
+  const renderUserCard = (user: User) => {
+    const selected = selectedUser?.id === user.id;
+    return (
+      <Pressable
+        key={user.id}
+        onPress={() => setSelectedUser(user)}
+        style={[styles.userCard, selected && styles.userCardSelected]}
+      >
+        <View style={[styles.userIcon, { backgroundColor: roleColor(user.role).light }]}>
+          <Ionicons name={roleIcon(user.role)} size={20} color={roleColor(user.role).main} />
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.userName}>{user.displayName}</Text>
+          <Text style={styles.userRole}>{roleLabel(user.role)}</Text>
+        </View>
+        {selected ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
+      </Pressable>
+    );
+  };
+
   if (!hasUsers) {
     return (
       <View style={styles.emptyContainer}>
@@ -93,26 +113,15 @@ export default function LoginScreen() {
       </View>
 
       <View style={[styles.card, shadows.sm]}>
-        <Text style={styles.sectionLabel}>Kullanıcı seçin</Text>
-        {userList.map((user) => {
-          const selected = selectedUser?.id === user.id;
-          return (
-            <Pressable
-              key={user.id}
-              onPress={() => setSelectedUser(user)}
-              style={[styles.userCard, selected && styles.userCardSelected]}
-            >
-              <View style={[styles.userIcon, { backgroundColor: roleColor(user.role).light }]}>
-                <Ionicons name={roleIcon(user.role)} size={20} color={roleColor(user.role).main} />
-              </View>
-              <View style={styles.userInfo}>
-                <Text style={styles.userName}>{user.displayName}</Text>
-                <Text style={styles.userRole}>{roleLabel(user.role)}</Text>
-              </View>
-              {selected ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : null}
-            </Pressable>
-          );
-        })}
+        <Text style={styles.sectionLabel}>Yöneticiler</Text>
+        {userList
+          .filter((user) => user.role !== 'PERSONNEL')
+          .map((user) => renderUserCard(user))}
+
+        <Text style={[styles.sectionLabel, styles.sectionSpacing]}>Personel</Text>
+        {userList
+          .filter((user) => user.role === 'PERSONNEL')
+          .map((user) => renderUserCard(user))}
 
         {selectedUser?.pin ? (
           <Input
@@ -218,6 +227,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderLight,
   },
   sectionLabel: { ...typography.overline, color: colors.textMuted },
+  sectionSpacing: { marginTop: spacing.sm },
   userCard: {
     flexDirection: 'row',
     alignItems: 'center',

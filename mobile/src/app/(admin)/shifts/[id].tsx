@@ -14,6 +14,7 @@ import { ShiftBadge } from '@/shared/components/Badge';
 import { Button } from '@/shared/components/Button';
 import { Input } from '@/shared/components/Input';
 import { LoadingState } from '@/shared/components/ErrorState';
+import { PersonnelListSection } from '@/shared/components/PersonnelListSection';
 import type { ShiftPattern, ShiftPatternDay, Personnel } from '@/shared/types';
 import { colors, spacing, typography } from '@/shared/theme';
 import {
@@ -215,18 +216,23 @@ export default function ShiftDetailScreen() {
         );
       })}
 
-      <Text style={styles.section}>Personel ({personnel.length})</Text>
-      {personnel.map((p: Personnel) => (
-        <Card key={p.id} style={styles.personCard}>
-          <View style={styles.personRow}>
-            <View style={styles.personInfo}>
-              <CardTitle>{getPersonnelFullName(p)}</CardTitle>
-              <CardSubtitle>{p.sicilNo}</CardSubtitle>
-            </View>
-            <Button title="Çıkar" variant="outline" onPress={() => handleRemovePersonnel(p)} />
-          </View>
-        </Card>
-      ))}
+      <PersonnelListSection
+        personnel={personnel}
+        title={`Personel (${personnel.length})`}
+        emptyMessage="Bu vardiyada personel yok."
+        module="shifts"
+        onPressPersonnel={(person) => router.push(`/(admin)/personnel/${person.id}`)}
+        renderTrailing={(person) => (
+          <Button title="Çıkar" variant="outline" onPress={() => handleRemovePersonnel(person)} />
+        )}
+        headerAction={
+          <Button
+            title="+ Ekle"
+            variant="ghost"
+            onPress={() => router.push(`/(admin)/shifts/${id}/add-personnel`)}
+          />
+        }
+      />
 
       <Button title="Vardiyayı Sil" onPress={handleDeleteGroup} variant="danger" />
     </ScrollView>

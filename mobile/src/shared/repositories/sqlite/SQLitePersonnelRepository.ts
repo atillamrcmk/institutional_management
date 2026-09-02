@@ -15,6 +15,7 @@ function mapRow(row: Record<string, unknown>): Personnel {
     lastName: row.last_name as string,
     sicilNo: row.sicil_no as string,
     title: (row.title as string) ?? null,
+    photoUri: (row.photo_uri as string) ?? null,
     status: row.status as Personnel['status'],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -40,6 +41,26 @@ export class SQLitePersonnelRepository implements PersonnelRepository {
     return row ? mapRow(row) : null;
   }
 
+  async findActiveBySicilNo(
+    institutionId: string,
+    sicilNo: string,
+    excludeId?: string,
+  ): Promise<Personnel | null> {
+    const normalized = sicilNo.trim();
+    if (!normalized) return null;
+
+    const row = await this.db.getFirstAsync<Record<string, unknown>>(
+      `SELECT * FROM personnel
+       WHERE institution_id = ? AND sicil_no = ? AND status = 'ACTIVE'
+       ${excludeId ? 'AND id != ?' : ''}
+       LIMIT 1`,
+      ...(excludeId
+        ? [institutionId, normalized, excludeId]
+        : [institutionId, normalized]),
+    );
+    return row ? mapRow(row) : null;
+  }
+
   async search(institutionId: string, query: string): Promise<Personnel[]> {
     const q = `%${query.trim()}%`;
     const rows = await this.db.getAllAsync<Record<string, unknown>>(
@@ -56,17 +77,24 @@ export class SQLitePersonnelRepository implements PersonnelRepository {
   }
 
   async create(institutionId: string, input: CreatePersonnelInput): Promise<Personnel> {
+    const sicilNo = input.sicilNo.trim();
+    const duplicate = await this.findActiveBySicilNo(institutionId, sicilNo);
+    if (duplicate) {
+      throw new Error('Bu sicil no zaten kayıtlı.');
+    }
+
     const id = generateId();
     const ts = nowIso();
     await this.db.runAsync(
-      `INSERT INTO personnel (id, institution_id, first_name, last_name, sicil_no, title, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
+      `INSERT INTO personnel (id, institution_id, first_name, last_name, sicil_no, title, photo_uri, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`,
       id,
       institutionId,
       input.firstName,
       input.lastName,
-      input.sicilNo,
+      sicilNo,
       input.title ?? null,
+      input.photoUri ?? null,
       ts,
       ts,
     );
@@ -79,22 +107,34 @@ export class SQLitePersonnelRepository implements PersonnelRepository {
     const existing = await this.getById(id);
     if (!existing) throw new Error('Personel bulunamadı');
 
+    const nextSicilNo = (input.sicilNo ?? existing.sicilNo).trim();
+    const duplicate = await this.findActiveBySicilNo(
+      existing.institutionId,
+      nextSicilNo,
+      id,
+    );
+    if (duplicate) {
+      throw new Error('Bu sicil no zaten kayıtlı.');
+    }
+
     const updated: Personnel = {
       ...existing,
       firstName: input.firstName ?? existing.firstName,
       lastName: input.lastName ?? existing.lastName,
-      sicilNo: input.sicilNo ?? existing.sicilNo,
+      sicilNo: nextSicilNo,
       title: input.title !== undefined ? input.title ?? null : existing.title,
+      photoUri: input.photoUri !== undefined ? input.photoUri : existing.photoUri,
       status: input.status ?? existing.status,
       updatedAt: nowIso(),
     };
 
     await this.db.runAsync(
-      `UPDATE personnel SET first_name = ?, last_name = ?, sicil_no = ?, title = ?, status = ?, updated_at = ? WHERE id = ?`,
+      `UPDATE personnel SET first_name = ?, last_name = ?, sicil_no = ?, title = ?, photo_uri = ?, status = ?, updated_at = ? WHERE id = ?`,
       updated.firstName,
       updated.lastName,
       updated.sicilNo,
       updated.title,
+      updated.photoUri,
       updated.status,
       updated.updatedAt,
       id,

@@ -5,7 +5,8 @@ import { ShiftBadge } from '@/shared/components/Badge';
 import { formatSlotLabel } from '@/features/shifts/constants/shiftDefaults';
 import type { ShiftSlotAssignment, UnitDaySchedule } from '@/features/shifts/services/scheduleService';
 import { colors, modules, radius, spacing, typography } from '@/shared/theme';
-import { formatDisplayDate, getPersonnelFullName } from '@/shared/utils/id';
+import { formatDisplayDate } from '@/shared/utils/id';
+import { PersonnelListSection } from '@/shared/components/PersonnelListSection';
 
 interface UnitShiftScheduleProps {
   schedule: UnitDaySchedule;
@@ -161,13 +162,15 @@ function ShiftSlotRow({
         slot.personnel.length === 0 ? (
           <CardSubtitle>Personel atanmadı</CardSubtitle>
         ) : (
-          <View style={styles.personnelList}>
-            {slot.personnel.map((p) => (
-              <Text key={p.id} style={styles.personName}>
-                · {getPersonnelFullName(p)}
-              </Text>
-            ))}
-          </View>
+          <PersonnelListSection
+            personnel={slot.personnel}
+            title={`${slot.personnel.length} personel`}
+            searchable={slot.personnel.length > 5}
+            previewCount={2}
+            module="shifts"
+            maxListHeight={220}
+            onPressPersonnel={(person) => onGroupPress(slot.group.id)}
+          />
         )
       ) : (
         <CardSubtitle>{slot.personnel.length} personel</CardSubtitle>

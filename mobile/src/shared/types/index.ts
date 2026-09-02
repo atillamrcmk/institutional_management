@@ -1,8 +1,22 @@
 export type UserRole = 'INSTITUTION_ADMIN' | 'UNIT_MANAGER' | 'PERSONNEL';
 
+export type Permission =
+  | 'institution.manage'
+  | 'personnel.manage'
+  | 'shifts.manage'
+  | 'units.manage'
+  | 'assignments.manage'
+  | 'users.manage'
+  | 'presence.view'
+  | 'messages.send';
+
+export type MessageAudienceType = 'UNIT' | 'PERSONNEL' | 'ALL_PERSONNEL' | 'ADMINS';
+
 export type PersonnelStatus = 'ACTIVE' | 'INACTIVE';
 
 export type ShiftType = 'DAY' | 'NIGHT' | 'FULL' | 'OFF';
+
+export type UnitWorkScheduleType = 'OFFICE' | 'SHIFT';
 
 export type AbsenceType = 'LEAVE' | 'REPORT' | 'TRAINING' | 'TEMPORARY_DUTY';
 
@@ -22,8 +36,34 @@ export interface User {
   displayName: string;
   role: UserRole;
   pin: string | null;
+  canMessageAdmins: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Message {
+  id: string;
+  institutionId: string;
+  senderUserId: string;
+  senderDisplayName: string;
+  subject: string;
+  body: string;
+  audienceType: MessageAudienceType;
+  unitId: string | null;
+  createdAt: string;
+}
+
+export interface InboxMessage extends Message {
+  recipientId: string;
+  readAt: string | null;
+}
+
+export interface SendMessageInput {
+  subject: string;
+  body: string;
+  audienceType: MessageAudienceType;
+  unitId?: string | null;
+  personnelIds?: string[];
 }
 
 export interface Personnel {
@@ -33,6 +73,7 @@ export interface Personnel {
   lastName: string;
   sicilNo: string;
   title: string | null;
+  photoUri: string | null;
   status: PersonnelStatus;
   createdAt: string;
   updatedAt: string;
@@ -45,6 +86,9 @@ export interface Unit {
   name: string;
   minimumStaff: number;
   managerPersonnelId: string | null;
+  workScheduleType: UnitWorkScheduleType;
+  officeStartTime: string;
+  officeEndTime: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -174,6 +218,7 @@ export interface CreatePersonnelInput {
   lastName: string;
   sicilNo: string;
   title?: string;
+  photoUri?: string | null;
 }
 
 export interface UpdatePersonnelInput {
@@ -181,6 +226,7 @@ export interface UpdatePersonnelInput {
   lastName?: string;
   sicilNo?: string;
   title?: string;
+  photoUri?: string | null;
   status?: PersonnelStatus;
 }
 
@@ -189,6 +235,9 @@ export interface CreateUnitInput {
   parentId?: string | null;
   minimumStaff?: number;
   managerPersonnelId?: string | null;
+  workScheduleType?: UnitWorkScheduleType;
+  officeStartTime?: string;
+  officeEndTime?: string;
 }
 
 export interface UpdateUnitInput {
@@ -196,4 +245,7 @@ export interface UpdateUnitInput {
   parentId?: string | null;
   minimumStaff?: number;
   managerPersonnelId?: string | null;
+  workScheduleType?: UnitWorkScheduleType;
+  officeStartTime?: string;
+  officeEndTime?: string;
 }

@@ -17,6 +17,11 @@ import type {
 export interface PersonnelRepository {
   getAll(institutionId: string): Promise<Personnel[]>;
   getById(id: string): Promise<Personnel | null>;
+  findActiveBySicilNo(
+    institutionId: string,
+    sicilNo: string,
+    excludeId?: string,
+  ): Promise<Personnel | null>;
   search(institutionId: string, query: string): Promise<Personnel[]>;
   create(institutionId: string, input: CreatePersonnelInput): Promise<Personnel>;
   update(id: string, input: UpdatePersonnelInput): Promise<Personnel>;
@@ -33,6 +38,7 @@ export interface UnitRepository {
   assignPersonnel(unitId: string, personnelId: string): Promise<PersonnelUnitHistory>;
   removePersonnel(unitId: string, personnelId: string): Promise<void>;
   getActivePersonnelForUnit(unitId: string): Promise<Personnel[]>;
+  getUnassignedPersonnel(institutionId: string, query?: string): Promise<Personnel[]>;
   getCurrentUnitForPersonnel(personnelId: string): Promise<Unit | null>;
   getPersonnelCountForUnit(unitId: string, date?: string): Promise<number>;
 }
@@ -135,13 +141,50 @@ export interface AuthRepository {
   getDemoUsers(institutionId: string): Promise<User[]>;
   getById(id: string): Promise<User | null>;
   login(userId: string, pin?: string): Promise<User | null>;
+  getUserGrants(userId: string): Promise<Array<{ permission: import('@/shared/types').Permission; unitId: string | null }>>;
+  grantPermission(
+    userId: string,
+    permission: import('@/shared/types').Permission,
+    unitId?: string | null,
+  ): Promise<void>;
   createUser(input: {
     institutionId: string;
     displayName: string;
     role: User['role'];
     personnelId?: string | null;
     pin?: string | null;
+    canMessageAdmins?: boolean;
   }): Promise<User>;
+  updateUser(
+    id: string,
+    input: { canMessageAdmins?: boolean; displayName?: string },
+  ): Promise<User>;
+  getUsersByRole(institutionId: string, roles: User['role'][]): Promise<User[]>;
+  getUserByPersonnelId(personnelId: string): Promise<User | null>;
+}
+
+export interface MessageRepository {
+  create(
+    institutionId: string,
+    sender: { userId: string; displayName: string },
+    input: import('@/shared/types').SendMessageInput,
+    recipients: Array<{ userId?: string | null; personnelId?: string | null }>,
+  ): Promise<import('@/shared/types').Message>;
+  getInbox(
+    institutionId: string,
+    userId: string,
+    personnelId: string | null,
+  ): Promise<import('@/shared/types').InboxMessage[]>;
+  getSent(userId: string): Promise<import('@/shared/types').Message[]>;
+  getById(id: string): Promise<import('@/shared/types').Message | null>;
+  markRead(recipientId: string): Promise<void>;
+  getUnreadCount(
+    institutionId: string,
+    userId: string,
+    personnelId: string | null,
+  ): Promise<number>;
+  savePushToken(userId: string, token: string, platform: string): Promise<void>;
+  getPushTokensForUsers(userIds: string[]): Promise<string[]>;
 }
 
 export interface InstitutionRepository {

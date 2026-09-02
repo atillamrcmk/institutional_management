@@ -6,8 +6,13 @@ import * as m003 from './migration_003_assignments';
 
 import * as m004 from './migration_004_shift_group_offset';
 import * as m005 from './migration_005_shift_group_cycle_start';
+import * as m006 from './migration_006_unit_work_schedule';
+import * as m007 from './migration_007_personnel_photo';
+import * as m008 from './migration_008_personnel_unique_sicil';
+import * as m009 from './migration_009_user_grants';
+import * as m010 from './migration_010_messaging';
 
-const migrations = [m001, m002, m003, m004, m005];
+const migrations = [m001, m002, m003, m004, m005, m006, m007, m008, m009, m010];
 
 async function ensureMigrationsTable(db: SQLiteDatabaseAdapter): Promise<void> {
   await db.execAsync(`

@@ -7,6 +7,7 @@ import { Card, CardTitle, CardSubtitle } from '@/shared/components/Card';
 import { Button } from '@/shared/components/Button';
 import { LoadingState } from '@/shared/components/ErrorState';
 import { EmptyState } from '@/shared/components/EmptyState';
+import { getUnitWorkScheduleLabel } from '@/features/units/services/officeSchedule';
 import type { Unit } from '@/shared/types';
 import { colors, spacing } from '@/shared/theme';
 
@@ -55,7 +56,8 @@ export default function UnitsListScreen() {
             >
               <CardTitle>{item.name}</CardTitle>
               <CardSubtitle>
-                {parent ? `Üst: ${parent.name} · ` : ''}Min kadro: {item.minimumStaff}
+                {getUnitWorkScheduleLabel(item)}
+                {parent ? ` · Üst: ${parent.name}` : ''} · Min kadro: {item.minimumStaff}
               </CardSubtitle>
             </Card>
           );

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, Alert, Pressable } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,15 +8,16 @@ import { Button } from '@/shared/components/Button';
 import { Input } from '@/shared/components/Input';
 import { LoadingState } from '@/shared/components/ErrorState';
 import { UnitSetupGuide } from '@/shared/components/UnitSetupGuide';
+import { PersonnelListSection } from '@/shared/components/PersonnelListSection';
 import { UnitShiftScheduleCard } from '@/shared/components/UnitShiftSchedule';
 import { getUnitSetupStatus } from '@/features/shifts/services/unitSetupService';
 import { getUnitScheduleForDate } from '@/features/shifts/services/scheduleService';
+import { getUnitWorkScheduleLabel } from '@/features/units/services/officeSchedule';
 import { invalidateShiftQueries } from '@/features/shifts/utils/invalidateShiftQueries';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
-import type { ShiftGroup, Unit, Personnel } from '@/shared/types';
+import type { Unit, Personnel, UnitWorkScheduleType } from '@/shared/types';
 import { colors, modules, spacing, typography } from '@/shared/theme';
 import { formatDisplayDate, getPersonnelFullName, todayDateString } from '@/shared/utils/id';
-import { useState } from 'react';
 
 export default function UnitDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -25,6 +27,9 @@ export default function UnitDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState('');
   const [minStaff, setMinStaff] = useState('');
+  const [workScheduleType, setWorkScheduleType] = useState<UnitWorkScheduleType>('OFFICE');
+  const [officeStartTime, setOfficeStartTime] = useState('08:00');
+  const [officeEndTime, setOfficeEndTime] = useState('17:00');
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['unit-detail', id],
@@ -55,6 +60,9 @@ export default function UnitDetailScreen() {
     if (!data?.unit) return;
     setName(data.unit.name);
     setMinStaff(String(data.unit.minimumStaff));
+    setWorkScheduleType(data.unit.workScheduleType);
+    setOfficeStartTime(data.unit.officeStartTime);
+    setOfficeEndTime(data.unit.officeEndTime);
     setEditing(true);
   };
 
@@ -64,7 +72,13 @@ export default function UnitDetailScreen() {
       Alert.alert('Geçersiz değer');
       return;
     }
-    await getRepositories().units.update(id, { name: name.trim(), minimumStaff: value });
+    await getRepositories().units.update(id, {
+      name: name.trim(),
+      minimumStaff: value,
+      workScheduleType,
+      officeStartTime: workScheduleType === 'OFFICE' ? officeStartTime : undefined,
+      officeEndTime: workScheduleType === 'OFFICE' ? officeEndTime : undefined,
+    });
     await queryClient.invalidateQueries({ queryKey: ['unit-detail', id] });
     await queryClient.invalidateQueries({ queryKey: ['units'] });
     setEditing(false);
@@ -117,6 +131,7 @@ export default function UnitDetailScreen() {
   }
 
   const { unit, children, personnel, groupsWithCounts, todaySchedule, setupStatus } = data;
+  const isOffice = unit.workScheduleType === 'OFFICE';
   const firstGroupWithoutPersonnel = groupsWithCounts.find((g) => g.personnel.length === 0);
 
   return (
@@ -125,6 +140,48 @@ export default function UnitDetailScreen() {
         <Card>
           <Input label="Birim Adı" value={name} onChangeText={setName} />
           <Input label="Minimum Kadro" value={minStaff} onChangeText={setMinStaff} keyboardType="number-pad" />
+
+          <Text style={styles.editLabel}>Çalışma Şekli</Text>
+          <View style={styles.scheduleRow}>
+            <Pressable
+              onPress={() => setWorkScheduleType('OFFICE')}
+              style={[styles.scheduleChip, workScheduleType === 'OFFICE' && styles.scheduleChipActive]}
+            >
+              <Text
+                style={[
+                  styles.scheduleChipText,
+                  workScheduleType === 'OFFICE' && styles.scheduleChipTextActive,
+                ]}
+              >
+                Mesai
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setWorkScheduleType('SHIFT')}
+              style={[styles.scheduleChip, workScheduleType === 'SHIFT' && styles.scheduleChipActive]}
+            >
+              <Text
+                style={[
+                  styles.scheduleChipText,
+                  workScheduleType === 'SHIFT' && styles.scheduleChipTextActive,
+                ]}
+              >
+                Vardiyalı
+              </Text>
+            </Pressable>
+          </View>
+
+          {workScheduleType === 'OFFICE' ? (
+            <View style={styles.timeRow}>
+              <View style={styles.timeField}>
+                <Input label="Mesai Başlangıç" value={officeStartTime} onChangeText={setOfficeStartTime} />
+              </View>
+              <View style={styles.timeField}>
+                <Input label="Mesai Bitiş" value={officeEndTime} onChangeText={setOfficeEndTime} />
+              </View>
+            </View>
+          ) : null}
+
           <View style={styles.row}>
             <Button title="Kaydet" onPress={handleSave} />
             <Button title="İptal" onPress={() => setEditing(false)} variant="outline" />
@@ -133,6 +190,7 @@ export default function UnitDetailScreen() {
       ) : (
         <>
           <Text style={styles.title}>{unit.name}</Text>
+          <Text style={styles.scheduleBadge}>{getUnitWorkScheduleLabel(unit)}</Text>
           <Button title="Birimi Düzenle" onPress={startEdit} variant="outline" />
         </>
       )}
@@ -150,9 +208,10 @@ export default function UnitDetailScreen() {
         }}
       />
 
-      {/* Adım 2: Vardiyalar */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.section}>Vardiyalar</Text>
+        <Text style={styles.section}>
+          Vardiyalar{isOffice ? ' (opsiyonel)' : ''}
+        </Text>
         <View style={styles.sectionActions}>
           {setupStatus.patternId ? (
             <Button
@@ -182,7 +241,11 @@ export default function UnitDetailScreen() {
         </View>
       </View>
       {groupsWithCounts.length === 0 ? (
-        <Text style={styles.empty}>Henüz vardiya yok. "Vardiya Kur" ile A–D oluşturun.</Text>
+        <Text style={styles.empty}>
+          {isOffice
+            ? 'Mesai birimi — vardiya kurmanız gerekmez. İsterseniz vardiya ekleyebilirsiniz.'
+            : 'Henüz vardiya yok. "Vardiya Kur" ile oluşturun.'}
+        </Text>
       ) : (
         groupsWithCounts.map(({ group, personnel: groupPersonnel }) => (
           <Pressable key={group.id} onPress={() => router.push(`/(admin)/shifts/${group.id}`)}>
@@ -206,35 +269,24 @@ export default function UnitDetailScreen() {
         ))
       )}
 
-      {/* Adım 3: Personel */}
-      <View style={styles.sectionHeader}>
-        <Text style={styles.section}>Personel ({personnel.length})</Text>
-        <Button
-          title="+ Ekle"
-          variant="ghost"
-          onPress={() => router.push(`/(admin)/units/${id}/add-personnel`)}
-        />
-      </View>
-      {personnel.length === 0 ? (
-        <Text style={styles.empty}>Birime henüz personel eklenmedi.</Text>
-      ) : (
-        personnel.map((p: Personnel) => (
-          <Card key={p.id} style={styles.itemCard}>
-            <View style={styles.personRow}>
-              <Pressable
-                style={styles.personInfo}
-                onPress={() => router.push(`/(admin)/personnel/${p.id}`)}
-              >
-                <CardTitle>{getPersonnelFullName(p)}</CardTitle>
-                <CardSubtitle>{p.sicilNo}</CardSubtitle>
-              </Pressable>
-              <Button title="Çıkar" variant="outline" onPress={() => handleRemovePersonnel(p)} />
-            </View>
-          </Card>
-        ))
-      )}
+      <PersonnelListSection
+        personnel={personnel}
+        title={`Personel (${personnel.length})`}
+        emptyMessage="Birime henüz personel eklenmedi."
+        module="units"
+        onPressPersonnel={(person) => router.push(`/(admin)/personnel/${person.id}`)}
+        renderTrailing={(person) => (
+          <Button title="Çıkar" variant="outline" onPress={() => handleRemovePersonnel(person)} />
+        )}
+        headerAction={
+          <Button
+            title="+ Ekle"
+            variant="ghost"
+            onPress={() => router.push(`/(admin)/units/${id}/add-personnel`)}
+          />
+        }
+      />
 
-      {/* Sonuç: Bugünkü plan */}
       {todaySchedule && setupStatus.hasShifts ? (
         <>
           <Text style={styles.section}>Bugün Kim Görevde?</Text>
@@ -248,6 +300,13 @@ export default function UnitDetailScreen() {
             onPress={() => router.push(`/(admin)/units/${id}/schedule`)}
           />
         </>
+      ) : isOffice && personnel.length > 0 ? (
+        <Card style={styles.itemCard} module="units">
+          <CardTitle>Bugün Mesai</CardTitle>
+          <CardSubtitle>
+            Hafta içi {unit.officeStartTime}–{unit.officeEndTime} · {personnel.length} personel
+          </CardSubtitle>
+        </Card>
       ) : null}
 
       {children.length > 0 ? (
@@ -257,7 +316,9 @@ export default function UnitDetailScreen() {
             <Pressable key={c.id} onPress={() => router.push(`/(admin)/units/${c.id}`)}>
               <Card style={styles.itemCard}>
                 <CardTitle>{c.name}</CardTitle>
-                <CardSubtitle>Min: {c.minimumStaff}</CardSubtitle>
+                <CardSubtitle>
+                  {getUnitWorkScheduleLabel(c)} · Min: {c.minimumStaff}
+                </CardSubtitle>
               </Card>
             </Pressable>
           ))}
@@ -274,6 +335,7 @@ const styles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xxl },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { ...typography.h1, color: colors.text },
+  scheduleBadge: { ...typography.bodySmall, color: modules.units.main, fontWeight: '600' },
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   sectionActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   section: { ...typography.h3, color: colors.text },
@@ -284,4 +346,20 @@ const styles = StyleSheet.create({
   personInfo: { flex: 1 },
   shiftRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   shiftInfo: { flex: 1 },
+  editLabel: { ...typography.label, color: colors.textSecondary },
+  scheduleRow: { flexDirection: 'row', gap: spacing.sm },
+  scheduleChip: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  scheduleChipActive: { borderColor: colors.primary, backgroundColor: colors.primaryMuted },
+  scheduleChipText: { ...typography.body, color: colors.text },
+  scheduleChipTextActive: { color: colors.primary, fontWeight: '600' },
+  timeRow: { flexDirection: 'row', gap: spacing.sm },
+  timeField: { flex: 1 },
 });

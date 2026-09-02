@@ -55,6 +55,7 @@ function mapPersonnel(row: Record<string, unknown>): Personnel {
     lastName: row.last_name as string,
     sicilNo: row.sicil_no as string,
     title: (row.title as string) ?? null,
+    photoUri: (row.photo_uri as string) ?? null,
     status: row.status as Personnel['status'],
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -69,6 +70,9 @@ function mapUnit(row: Record<string, unknown>): Unit {
     name: row.name as string,
     minimumStaff: row.minimum_staff as number,
     managerPersonnelId: (row.manager_personnel_id as string) ?? null,
+    workScheduleType: (row.work_schedule_type as Unit['workScheduleType']) ?? 'OFFICE',
+    officeStartTime: (row.office_start_time as string) ?? '08:00',
+    officeEndTime: (row.office_end_time as string) ?? '17:00',
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };

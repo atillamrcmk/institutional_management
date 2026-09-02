@@ -7,6 +7,7 @@ interface Step {
   title: string;
   description: string;
   done: boolean;
+  optional?: boolean;
   actionLabel?: string;
   onAction?: () => void;
 }
@@ -24,12 +25,16 @@ export function UnitSetupGuide({
   onAddPersonnel,
   onAssignShifts,
 }: UnitSetupGuideProps) {
+  const isOffice = status.workScheduleType === 'OFFICE';
+
   if (status.isComplete) {
     return (
       <View style={styles.completeBox}>
         <Text style={styles.completeTitle}>Kurulum tamamlandı</Text>
         <Text style={styles.completeText}>
-          {status.shiftCount} vardiya · {status.personnelCount} personel
+          {isOffice
+            ? `Mesai birimi · ${status.personnelCount} personel`
+            : `${status.shiftCount} vardiya · ${status.personnelCount} personel`}
         </Text>
       </View>
     );
@@ -39,40 +44,47 @@ export function UnitSetupGuide({
     {
       number: 1,
       title: 'Birim oluşturuldu',
-      description: 'Birim hazır',
+      description: isOffice ? 'Mesai birimi (vardiya gerekmez)' : 'Vardiyalı birim',
       done: true,
     },
     {
       number: 2,
-      title: 'Vardiyaları oluştur',
-      description: status.hasShifts
-        ? `${status.shiftCount} vardiya tanımlı`
-        : 'A, B, C, D vardiyalarını ekleyin',
-      done: status.hasShifts,
-      actionLabel: status.hasShifts ? undefined : 'Vardiya Kur',
-      onAction: status.hasShifts ? undefined : onCreateShifts,
-    },
-    {
-      number: 3,
       title: 'Personel ekle',
       description: status.hasPersonnel
         ? `${status.personnelCount} personel birimde`
-        : 'Önce birime personel ekleyin',
+        : 'Birime personel atayın',
       done: status.hasPersonnel,
       actionLabel: status.hasPersonnel ? undefined : 'Personel Ekle',
       onAction: status.hasPersonnel ? undefined : onAddPersonnel,
     },
-    {
-      number: 4,
-      title: 'Personeli vardiyalara ata',
-      description: status.allShiftsHavePersonnel
-        ? 'Tüm vardiyalarda personel var'
-        : `${status.shiftsWithPersonnel}/${status.shiftCount || 0} vardiyada personel var`,
-      done: status.allShiftsHavePersonnel,
-      actionLabel: status.hasShifts && status.hasPersonnel ? 'Ata' : undefined,
-      onAction: status.hasShifts && status.hasPersonnel ? onAssignShifts : undefined,
-    },
   ];
+
+  if (!isOffice) {
+    steps.push({
+      number: 3,
+      title: 'Vardiyaları oluştur',
+      description: status.hasShifts
+        ? `${status.shiftCount} vardiya tanımlı`
+        : 'İsteğe bağlı — vardiyalı personel için',
+      done: status.hasShifts,
+      optional: !status.hasShifts,
+      actionLabel: status.hasShifts ? undefined : 'Vardiya Kur',
+      onAction: status.hasShifts ? undefined : onCreateShifts,
+    });
+
+    if (status.hasShifts) {
+      steps.push({
+        number: 4,
+        title: 'Personeli vardiyalara ata',
+        description: status.allShiftsHavePersonnel
+          ? 'Tüm vardiyalarda personel var'
+          : `${status.shiftsWithPersonnel}/${status.shiftCount} vardiyada personel var`,
+        done: status.allShiftsHavePersonnel,
+        actionLabel: status.hasPersonnel ? 'Ata' : undefined,
+        onAction: status.hasPersonnel ? onAssignShifts : undefined,
+      });
+    }
+  }
 
   return (
     <View style={styles.container}>
@@ -85,7 +97,10 @@ export function UnitSetupGuide({
             </Text>
           </View>
           <View style={styles.stepBody}>
-            <Text style={[styles.stepTitle, step.done && styles.stepTitleDone]}>{step.title}</Text>
+            <Text style={[styles.stepTitle, step.done && styles.stepTitleDone]}>
+              {step.title}
+              {step.optional ? ' (opsiyonel)' : ''}
+            </Text>
             <Text style={styles.stepDesc}>{step.description}</Text>
             {step.actionLabel && step.onAction ? (
               <Pressable onPress={step.onAction} style={styles.actionBtn}>

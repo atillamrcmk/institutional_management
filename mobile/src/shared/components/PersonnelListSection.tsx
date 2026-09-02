@@ -138,7 +138,11 @@ export function PersonnelListSection({
                   return (
                     <Pressable key={person.id} onPress={() => onToggleSelect(person.id)}>
                       <Card
-                        style={[styles.itemCard, isSelected && styles.itemCardSelected]}
+                        style={
+                          isSelected
+                            ? { ...styles.itemCard, ...styles.itemCardSelected }
+                            : styles.itemCard
+                        }
                         module={module}
                       >
                         {row}

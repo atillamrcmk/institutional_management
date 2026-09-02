@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/store/authStore';
+import { fetchPersonnelList } from '@/features/personnel/services/personnelApi';
 import { getRepositories } from '@/shared/repositories';
 import { useInstitutionId } from '@/shared/hooks/useInstitutionId';
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue';
@@ -18,19 +20,25 @@ import { getPersonnelFullName } from '@/shared/utils/id';
 export default function PersonnelListScreen() {
   const router = useRouter();
   const institutionId = useInstitutionId();
+  const authMode = useAuthStore((s) => s.authMode);
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search, 300);
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['personnel', institutionId, debouncedSearch],
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ['personnel', authMode, institutionId, debouncedSearch],
     queryFn: async () => {
+      if (authMode === 'server') {
+        if (!accessToken || !institutionId) return [];
+        return fetchPersonnelList(accessToken, institutionId, debouncedSearch);
+      }
       const repos = getRepositories();
       if (debouncedSearch.trim()) {
         return repos.personnel.search(institutionId!, debouncedSearch);
       }
       return repos.personnel.getAll(institutionId!);
     },
-    enabled: !!institutionId,
+    enabled: !!institutionId && (authMode === 'local' || !!accessToken),
     placeholderData: keepPreviousData,
   });
 
@@ -55,6 +63,12 @@ export default function PersonnelListScreen() {
 
       {showInitialLoading ? (
         <LoadingState message="Personel listesi yükleniyor..." />
+      ) : error ? (
+        <EmptyState
+          title="Liste alınamadı"
+          message={error instanceof Error ? error.message : 'Sunucu hatası'}
+          module="personnel"
+        />
       ) : (
         <FlatList
           data={data}

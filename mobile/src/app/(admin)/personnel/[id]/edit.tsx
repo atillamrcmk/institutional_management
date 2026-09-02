@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react';
 import { ScrollView, StyleSheet, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/store/authStore';
+import {
+  fetchPersonnelById,
+  updatePersonnelOnServer,
+} from '@/features/personnel/services/personnelApi';
 import { getRepositories } from '@/shared/repositories';
 import { Input } from '@/shared/components/Input';
 import { Button } from '@/shared/components/Button';
@@ -17,6 +22,9 @@ export default function EditPersonnelScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const authMode = useAuthStore((s) => s.authMode);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const institutionId = useAuthStore((s) => s.institutionId);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [sicilNo, setSicilNo] = useState('');
@@ -26,8 +34,14 @@ export default function EditPersonnelScreen() {
   const [saving, setSaving] = useState(false);
 
   const { data: personnel, isLoading } = useQuery({
-    queryKey: ['personnel-edit', id],
-    queryFn: () => getRepositories().personnel.getById(id),
+    queryKey: ['personnel-edit', authMode, id],
+    queryFn: async () => {
+      if (authMode === 'server') {
+        if (!accessToken || !institutionId) return null;
+        return fetchPersonnelById(accessToken, institutionId, id);
+      }
+      return getRepositories().personnel.getById(id);
+    },
   });
 
   useEffect(() => {
@@ -59,16 +73,28 @@ export default function EditPersonnelScreen() {
         nextPhotoUri = await persistPersonnelPhoto(id, photoUri);
       }
 
-      await getRepositories().personnel.update(id, {
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        sicilNo: sicilNo.trim(),
-        title: title.trim() || undefined,
-        photoUri: nextPhotoUri,
-      });
+      if (authMode === 'server') {
+        if (!accessToken || !institutionId) throw new Error('Oturum bulunamadı.');
+        await updatePersonnelOnServer(accessToken, institutionId, id, {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          sicilNo: sicilNo.trim(),
+          title: title.trim() || null,
+          photoUri: nextPhotoUri,
+        });
+      } else {
+        await getRepositories().personnel.update(id, {
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          sicilNo: sicilNo.trim(),
+          title: title.trim() || undefined,
+          photoUri: nextPhotoUri,
+        });
+      }
+
       await queryClient.invalidateQueries({ queryKey: ['personnel'] });
-      await queryClient.invalidateQueries({ queryKey: ['personnel-detail', id] });
-      await queryClient.invalidateQueries({ queryKey: ['personnel-edit', id] });
+      await queryClient.invalidateQueries({ queryKey: ['personnel-detail'] });
+      await queryClient.invalidateQueries({ queryKey: ['personnel-edit'] });
       Alert.alert('Başarılı', 'Personel güncellendi.', [
         { text: 'Tamam', onPress: () => router.back() },
       ]);
@@ -80,6 +106,23 @@ export default function EditPersonnelScreen() {
   };
 
   const handleDeactivate = () => {
+    if (authMode === 'server') {
+      Alert.alert('Pasifleştir', 'Bu personeli pasifleştirmek istiyor musunuz?', [
+        { text: 'Vazgeç', style: 'cancel' },
+        {
+          text: 'Pasifleştir',
+          style: 'destructive',
+          onPress: async () => {
+            if (!accessToken || !institutionId) return;
+            await updatePersonnelOnServer(accessToken, institutionId, id, { status: 'INACTIVE' });
+            await queryClient.invalidateQueries({ queryKey: ['personnel'] });
+            router.back();
+          },
+        },
+      ]);
+      return;
+    }
+
     Alert.alert('Personeli Pasifleştir', 'Bu personel listeden kaldırılacak. Devam?', [
       { text: 'Vazgeç', style: 'cancel' },
       {
@@ -89,7 +132,7 @@ export default function EditPersonnelScreen() {
           await deletePersonnelPhoto(savedPhotoUri);
           await getRepositories().personnel.delete(id);
           await queryClient.invalidateQueries({ queryKey: ['personnel'] });
-          router.replace('/(admin)/(tabs)/personnel');
+          router.back();
         },
       },
     ]);
@@ -110,7 +153,7 @@ export default function EditPersonnelScreen() {
       <Input label="Sicil No *" value={sicilNo} onChangeText={setSicilNo} />
       <Input label="Ünvan" value={title} onChangeText={setTitle} />
       <Button title="Kaydet" onPress={handleSave} loading={saving} />
-      <Button title="Personeli Pasifleştir" onPress={handleDeactivate} variant="danger" />
+      <Button title="Pasifleştir" onPress={handleDeactivate} variant="danger" />
     </ScrollView>
   );
 }

@@ -1,3 +1,4 @@
+import { isServerApiConfigured } from '@/shared/api/config';
 import type { SQLiteDatabaseAdapter } from '@/shared/database/types';
 import type {
   AbsenceRepository,
@@ -10,6 +11,7 @@ import type {
   TaskTypeRepository,
   UnitRepository,
 } from './interfaces';
+import { createApiRepositories } from './api';
 import { SQLiteAbsenceRepository } from './sqlite/SQLiteAbsenceRepository';
 import { SQLiteAssignmentRepository } from './sqlite/SQLiteAssignmentRepository';
 import { SQLiteAuthRepository } from './sqlite/SQLiteAuthRepository';
@@ -33,9 +35,10 @@ export interface Repositories {
 }
 
 let repositories: Repositories | null = null;
+let usingApi = false;
 
-export function initRepositories(db: SQLiteDatabaseAdapter): Repositories {
-  repositories = {
+export function createSqliteRepositories(db: SQLiteDatabaseAdapter): Repositories {
+  return {
     personnel: new SQLitePersonnelRepository(db),
     units: new SQLiteUnitRepository(db),
     shifts: new SQLiteShiftRepository(db),
@@ -46,6 +49,20 @@ export function initRepositories(db: SQLiteDatabaseAdapter): Repositories {
     assignments: new SQLiteAssignmentRepository(db),
     messages: new SQLiteMessageRepository(db),
   };
+}
+
+/**
+ * EXPO_PUBLIC_API_URL tanımlıysa tüm alan verisi canlı sunucudan okunur;
+ * aksi hâlde yerel SQLite deposu kullanılır.
+ */
+export function initRepositories(db: SQLiteDatabaseAdapter): Repositories {
+  if (isServerApiConfigured()) {
+    usingApi = true;
+    repositories = createApiRepositories();
+  } else {
+    usingApi = false;
+    repositories = createSqliteRepositories(db);
+  }
   return repositories;
 }
 
@@ -54,4 +71,8 @@ export function getRepositories(): Repositories {
     throw new Error('Repositories henüz başlatılmadı');
   }
   return repositories;
+}
+
+export function isUsingApiRepositories(): boolean {
+  return usingApi;
 }

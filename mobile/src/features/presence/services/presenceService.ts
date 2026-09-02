@@ -1,8 +1,15 @@
 import { calculateShiftForDate, isWorkingShift } from '@/features/shifts/engine/shiftCalculator';
 import { getOfficeShiftForDate } from '@/features/units/services/officeSchedule';
-import { getRepositories } from '@/shared/repositories';
+import { fetchOfficeUnitsSummary, fetchPresenceForDate } from '@/shared/api/presenceApi';
+import { hasServerSession } from '@/shared/api/session';
+import { getRepositories, isUsingApiRepositories } from '@/shared/repositories';
 import type { CalculatedShift, Personnel, PersonnelPresence, ShiftGroup, Unit } from '@/shared/types';
 import { todayDateString } from '@/shared/utils/id';
+
+/** Görev durumu sunucuda hesaplanabiliyorsa istemci tarafı hesaplama atlanır. */
+function useServerPresence(): boolean {
+  return isUsingApiRepositories() && hasServerSession();
+}
 
 export interface PresenceFilters {
   unitId?: string;
@@ -22,6 +29,11 @@ export async function getOfficeUnitsSummary(
   institutionId: string,
   date: string = todayDateString(),
 ): Promise<OfficeUnitSummary[]> {
+  if (useServerPresence()) {
+    const summaries = await fetchOfficeUnitsSummary(institutionId, date);
+    return summaries.sort((a, b) => a.unitName.localeCompare(b.unitName, 'tr'));
+  }
+
   const repos = getRepositories();
   const units = await repos.units.getAll(institutionId);
   const results: OfficeUnitSummary[] = [];
@@ -52,6 +64,13 @@ export async function getPresenceForDate(
   date: string = todayDateString(),
   filters: PresenceFilters = {},
 ): Promise<PersonnelPresence[]> {
+  if (useServerPresence()) {
+    const entries = await fetchPresenceForDate(institutionId, date, filters);
+    return entries.sort((a, b) =>
+      a.personnel.lastName.localeCompare(b.personnel.lastName, 'tr'),
+    );
+  }
+
   const repos = getRepositories();
   const allPersonnel = await repos.personnel.getAll(institutionId);
   const results: PersonnelPresence[] = [];
@@ -135,12 +154,11 @@ export async function getDashboardStats(institutionId: string, date: string = to
     absentCount: absent.length,
     onAssignment: onAssignment.length,
     available: onDuty.length,
-    activeUnits: await getActiveUnitsSummary(institutionId, date),
+    activeUnits: getActiveUnitsSummary(presence),
   };
 }
 
-async function getActiveUnitsSummary(institutionId: string, date: string) {
-  const presence = await getPresenceForDate(institutionId, date);
+function getActiveUnitsSummary(presence: PersonnelPresence[]) {
   const unitMap = new Map<string, { unit: Unit; count: number; shiftName?: string }>();
 
   for (const p of presence) {

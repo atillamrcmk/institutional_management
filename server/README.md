@@ -1,6 +1,7 @@
 # Personel Planla — Multi-Tenant API
 
-Kurum/işletme başına **ayrı PostgreSQL veritabanı**. Detay: [ARCHITECTURE.md](./ARCHITECTURE.md)
+Kurum/işletme başına **ayrı PostgreSQL veritabanı**.
+Mimari: [ARCHITECTURE.md](./ARCHITECTURE.md) · Uç nokta referansı: [API.md](./API.md)
 
 ## Hızlı kurulum (sunucu)
 
@@ -21,6 +22,21 @@ npm run dev
 ```
 
 PostgreSQL kullanıcısının `CREATE DATABASE` yetkisi olmalı (`ADMIN_DATABASE_URL`).
+
+## Tenant şeması güncelleme
+
+Yeni kurumlar `sql/tenant/001_tenant.sql` ve `sql/tenant/002_operations.sql` dosyalarını
+sırayla uygulanmış olarak doğar. **Mevcut** kurumların veritabanlarını güncellemek için:
+
+```bash
+npm run migrate:tenants                    # varsayılan: 002_operations.sql
+npm run migrate:tenants -- 003_yeni.sql    # belirli dosya(lar)
+```
+
+Script control DB'deki `ACTIVE` kurumları gezer ve her tenant DB'sine dosyayı uygular.
+Tüm tenant SQL dosyaları `IF NOT EXISTS` ile yazıldığı için tekrar tekrar çalıştırılabilir;
+sonuçlar `provisioning_logs` tablosuna yazılır. Bir kurum hata verirse diğerleri devam eder
+ve script `exit 1` ile biter.
 
 ## İlk kurum oluşturma
 
@@ -76,6 +92,10 @@ curl -X POST http://localhost:8787/api/v1/users/invite \
 | `ADMIN_DATABASE_URL` | `CREATE DATABASE` için |
 | `TENANT_DATABASE_URL_TEMPLATE` | `.../{db}` şablonu |
 | `JWT_SECRET` | Oturum imzası |
+| `CORS_ORIGINS` | Virgülle ayrılmış izinli origin listesi (boş/`*` → tümü) |
+| `RATE_LIMIT_GENERAL` | Genel hız limiti, istek/dakika (varsayılan 200) |
+| `RATE_LIMIT_AUTH` | Kimlik uçları limiti, istek/15dk (varsayılan 20) |
+| `TRUST_PROXY` | Reverse proxy hop sayısı (varsayılan 1) |
 
 ## Üretim checklist
 

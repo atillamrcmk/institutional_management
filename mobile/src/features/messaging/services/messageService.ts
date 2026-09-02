@@ -1,4 +1,4 @@
-import { getRepositories } from '@/shared/repositories';
+import { getRepositories, isUsingApiRepositories } from '@/shared/repositories';
 import type { Message, MessageAudienceType, SendMessageInput, User } from '@/shared/types';
 import { isAdminRole } from '@/features/auth/store/authStore';
 import { sendPushNotifications } from './pushNotificationService';
@@ -41,7 +41,7 @@ async function resolveUnitRecipients(
   unitId: string,
 ): Promise<ResolvedRecipient[]> {
   const repos = getRepositories();
-  const personnel = await repos.units.getPersonnelForUnit(unitId);
+  const personnel = await repos.units.getActivePersonnelForUnit(unitId);
   return resolvePersonnelRecipients(institutionId, personnel.map((p) => p.id));
 }
 
@@ -94,6 +94,18 @@ export async function sendMessage(
 ): Promise<Message> {
   assertCanSend(sender, input);
 
+  const repos = getRepositories();
+
+  // Sunucu modunda alıcı çözümü, kayıt ve bildirim gönderimi API tarafında yapılır.
+  if (isUsingApiRepositories()) {
+    return repos.messages.create(
+      institutionId,
+      { userId: sender.id, displayName: sender.displayName },
+      input,
+      [],
+    );
+  }
+
   const recipients = await resolveRecipients(institutionId, input);
   const uniqueRecipients = dedupeRecipients(recipients);
 
@@ -101,7 +113,6 @@ export async function sendMessage(
     throw new Error('Mesaj için alıcı bulunamadı.');
   }
 
-  const repos = getRepositories();
   const message = await repos.messages.create(
     institutionId,
     { userId: sender.id, displayName: sender.displayName },

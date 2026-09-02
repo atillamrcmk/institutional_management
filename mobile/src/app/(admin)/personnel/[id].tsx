@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { ScrollView, View, Text, StyleSheet, Pressable, Alert } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuthStore } from '@/features/auth/store/authStore';
+import { fetchPersonnelById } from '@/features/personnel/services/personnelApi';
 import { getRepositories } from '@/shared/repositories';
 import { calculateShiftForDate, formatShiftTime, getShiftTypeLabel } from '@/features/shifts/engine/shiftCalculator';
 import { Avatar } from '@/shared/components/Avatar';
@@ -21,6 +23,9 @@ export default function PersonnelDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const authMode = useAuthStore((s) => s.authMode);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const institutionId = useAuthStore((s) => s.institutionId);
   const [showForm, setShowForm] = useState(false);
   const [absenceType, setAbsenceType] = useState<AbsenceType>('LEAVE');
   const [startDate, setStartDate] = useState(todayDateString());
@@ -29,8 +34,24 @@ export default function PersonnelDetailScreen() {
   const [saving, setSaving] = useState(false);
 
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ['personnel-detail', id],
+    queryKey: ['personnel-detail', authMode, id],
     queryFn: async () => {
+      if (authMode === 'server') {
+        if (!accessToken || !institutionId) return null;
+        const personnel = await fetchPersonnelById(accessToken, institutionId, id);
+        if (!personnel) return null;
+        return {
+          personnel,
+          unit: null,
+          linkedUser: null,
+          shiftData: null,
+          shift: null,
+          absences: [] as PersonnelAbsence[],
+          isAbsent: false,
+          taskAssignment: null,
+        };
+      }
+
       const repos = getRepositories();
       const personnel = await repos.personnel.getById(id);
       if (!personnel) return null;
@@ -56,6 +77,10 @@ export default function PersonnelDetailScreen() {
   });
 
   const handleAddAbsence = async () => {
+    if (authMode === 'server') {
+      Alert.alert('Yakında', 'İzin kayıtları sunucu modunda henüz açık değil.');
+      return;
+    }
     if (startDate > endDate) {
       Alert.alert('Geçersiz tarih', 'Bitiş tarihi başlangıçtan önce olamaz.');
       return;
@@ -164,6 +189,14 @@ export default function PersonnelDetailScreen() {
         </Card>
       ) : null}
 
+      {authMode === 'server' ? (
+        <Card>
+          <CardSubtitle>
+            Vardiya, birim ve izin kayıtları sunucuya taşındıkça burada görünecek.
+          </CardSubtitle>
+        </Card>
+      ) : null}
+
       <Card>
         <View style={styles.absenceHeader}>
           <CardTitle>İzinler</CardTitle>
@@ -171,6 +204,7 @@ export default function PersonnelDetailScreen() {
             title={showForm ? 'İptal' : '+ Ekle'}
             onPress={() => setShowForm((v) => !v)}
             variant="outline"
+            disabled={authMode === 'server'}
           />
         </View>
 

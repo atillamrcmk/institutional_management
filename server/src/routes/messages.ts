@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { requireAuth, type AuthedRequest } from '../middleware/auth.js';
+import { hasPermission } from '../services/authService.js';
 import { sendPushNotifications } from '../services/pushService.js';
 
 export const messagesRouter = Router();
@@ -98,15 +99,22 @@ messagesRouter.post('/', async (req: AuthedRequest, res) => {
     return;
   }
 
-  if (body.audienceType === 'ADMINS' && auth.role === 'PERSONNEL') {
-    const can = await pool.query(
-      `SELECT can_message_admins FROM users WHERE id = $1`,
-      [auth.userId],
-    );
-    if (!can.rows[0]?.can_message_admins) {
-      res.status(403).json({ error: 'Yöneticilere mesaj yetkiniz yok' });
-      return;
+  if (body.audienceType === 'ADMINS') {
+    // Personel yöneticilere yalnızca kendisine bu hak tanınmışsa yazabilir.
+    if (auth.role === 'PERSONNEL') {
+      const can = await pool.query(
+        `SELECT can_message_admins FROM users WHERE id = $1`,
+        [auth.userId],
+      );
+      if (!can.rows[0]?.can_message_admins) {
+        res.status(403).json({ error: 'Yöneticilere mesaj yetkiniz yok' });
+        return;
+      }
     }
+  } else if (!hasPermission(auth, 'messages.send')) {
+    // Toplu duyurular (birim / tüm personel / seçili personel) ayrı izin ister.
+    res.status(403).json({ error: 'Toplu mesaj gönderme yetkiniz yok' });
+    return;
   }
 
   const messageId = body.id ?? randomUUID();
@@ -174,15 +182,18 @@ messagesRouter.post('/', async (req: AuthedRequest, res) => {
   }
 });
 
+async function personnelIdForUser(pool: pg.Pool, userId: string): Promise<string | null> {
+  const result = await pool.query<{ personnel_id: string | null }>(
+    `SELECT personnel_id FROM users WHERE id = $1`,
+    [userId],
+  );
+  return result.rows[0]?.personnel_id ?? null;
+}
+
 messagesRouter.get('/inbox', async (req: AuthedRequest, res) => {
   const pool = req.tenantPool!;
   const auth = req.auth!;
-
-  const userRow = await pool.query<{ personnel_id: string | null }>(
-    `SELECT personnel_id FROM users WHERE id = $1`,
-    [auth.userId],
-  );
-  const personnelId = userRow.rows[0]?.personnel_id ?? null;
+  const personnelId = await personnelIdForUser(pool, auth.userId);
 
   const result = await pool.query(
     `SELECT m.*, mr.id AS recipient_id, mr.read_at
@@ -194,4 +205,116 @@ messagesRouter.get('/inbox', async (req: AuthedRequest, res) => {
   );
 
   res.json(result.rows);
+});
+
+/** Kullanıcının gönderdiği mesajlar + alıcı/okunma sayıları. */
+messagesRouter.get('/sent', async (req: AuthedRequest, res) => {
+  const result = await req.tenantPool!.query(
+    `SELECT m.*,
+            (SELECT COUNT(*)::int FROM message_recipients mr WHERE mr.message_id = m.id)
+              AS recipient_count,
+            (SELECT COUNT(*)::int FROM message_recipients mr
+              WHERE mr.message_id = m.id AND mr.read_at IS NOT NULL) AS read_count
+       FROM messages m
+      WHERE m.sender_user_id = $1
+      ORDER BY m.created_at DESC`,
+    [req.auth!.userId],
+  );
+
+  res.json(result.rows);
+});
+
+/** Okunmamış mesaj sayısı. */
+messagesRouter.get('/unread-count', async (req: AuthedRequest, res) => {
+  const pool = req.tenantPool!;
+  const auth = req.auth!;
+  const personnelId = await personnelIdForUser(pool, auth.userId);
+
+  const result = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM message_recipients mr
+      WHERE mr.read_at IS NULL
+        AND (mr.user_id = $1 OR ($2::text IS NOT NULL AND mr.personnel_id = $2::text))`,
+    [auth.userId, personnelId],
+  );
+
+  res.json({ count: Number(result.rows[0]?.count ?? 0) });
+});
+
+/** Tek mesaj — yalnızca gönderen veya alıcı görebilir. */
+messagesRouter.get('/:id', async (req: AuthedRequest, res) => {
+  const pool = req.tenantPool!;
+  const auth = req.auth!;
+  const personnelId = await personnelIdForUser(pool, auth.userId);
+
+  const result = await pool.query(
+    `SELECT m.*, mr.id AS recipient_id, mr.read_at
+       FROM messages m
+       LEFT JOIN message_recipients mr
+         ON mr.message_id = m.id
+        AND (mr.user_id = $2 OR ($3::text IS NOT NULL AND mr.personnel_id = $3::text))
+      WHERE m.id = $1
+      LIMIT 1`,
+    [req.params.id, auth.userId, personnelId],
+  );
+
+  const message = result.rows[0];
+  if (!message) {
+    res.status(404).json({ error: 'Mesaj bulunamadı' });
+    return;
+  }
+
+  const isSender = message.sender_user_id === auth.userId;
+  if (!isSender && !message.recipient_id) {
+    res.status(403).json({ error: 'Bu mesaja erişiminiz yok' });
+    return;
+  }
+
+  if (isSender) {
+    const recipients = await pool.query(
+      `SELECT mr.id, mr.user_id, mr.personnel_id, mr.read_at,
+              p.first_name, p.last_name
+         FROM message_recipients mr
+         LEFT JOIN personnel p ON p.id = mr.personnel_id
+        WHERE mr.message_id = $1`,
+      [req.params.id],
+    );
+    res.json({ ...message, recipients: recipients.rows });
+    return;
+  }
+
+  res.json(message);
+});
+
+/** Mesajı okundu olarak işaretle (yalnızca kendi alıcı kaydını). */
+messagesRouter.post('/:id/read', async (req: AuthedRequest, res) => {
+  const pool = req.tenantPool!;
+  const auth = req.auth!;
+  const personnelId = await personnelIdForUser(pool, auth.userId);
+
+  const result = await pool.query(
+    `UPDATE message_recipients SET read_at = NOW()
+      WHERE message_id = $1
+        AND read_at IS NULL
+        AND (user_id = $2 OR ($3::text IS NOT NULL AND personnel_id = $3::text))
+      RETURNING id, read_at`,
+    [req.params.id, auth.userId, personnelId],
+  );
+
+  if (!result.rowCount) {
+    const exists = await pool.query(
+      `SELECT id FROM message_recipients
+        WHERE message_id = $1
+          AND (user_id = $2 OR ($3::text IS NOT NULL AND personnel_id = $3::text))`,
+      [req.params.id, auth.userId, personnelId],
+    );
+    if (!exists.rowCount) {
+      res.status(404).json({ error: 'Mesaj bulunamadı' });
+      return;
+    }
+    res.json({ ok: true, alreadyRead: true });
+    return;
+  }
+
+  res.json({ ok: true, readAt: result.rows[0].read_at });
 });

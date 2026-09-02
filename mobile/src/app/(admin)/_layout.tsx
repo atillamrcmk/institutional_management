@@ -26,6 +26,7 @@ export default function AdminLayout() {
       <Stack.Screen name="messages/index" options={{ title: 'Mesajlar' }} />
       <Stack.Screen name="messages/compose" options={{ title: 'Mesaj Gönder' }} />
       <Stack.Screen name="messages/[id]" options={{ title: 'Mesaj Detay' }} />
+      <Stack.Screen name="users/invite" options={{ title: 'Kullanıcı Davet Et' }} />
     </Stack>
   );
 }

@@ -1,37 +1,70 @@
-import { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { useMemo, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/features/auth/store/authStore';
-import { createEmptyInstitution } from '@/shared/database/seed/createEmptyInstitution';
+import { API_BASE_URL } from '@/shared/api/config';
 import { Button } from '@/shared/components/Button';
 import { Input } from '@/shared/components/Input';
 import { colors, modules, radius, shadows, spacing, typography } from '@/shared/theme';
 
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/ğ/g, 'g')
+    .replace(/ü/g, 'u')
+    .replace(/ş/g, 's')
+    .replace(/ı/g, 'i')
+    .replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 40);
+}
+
 export default function CreateInstitutionScreen() {
   const router = useRouter();
-  const queryClient = useQueryClient();
-  const resetAfterSeed = useAuthStore((s) => s.resetAfterSeed);
+  const createTenantAndLogin = useAuthStore((s) => s.createTenantAndLogin);
+
   const [institutionName, setInstitutionName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [slugTouched, setSlugTouched] = useState(false);
+  const [orgType, setOrgType] = useState<'INSTITUTION' | 'BUSINESS'>('INSTITUTION');
+  const [displayName, setDisplayName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [creating, setCreating] = useState(false);
 
+  const autoSlug = useMemo(() => slugify(institutionName), [institutionName]);
+  const effectiveSlug = slugTouched ? slug : autoSlug;
+
   const handleCreate = async () => {
-    if (!institutionName.trim()) {
-      Alert.alert('Eksik bilgi', 'Kurum adı girin.');
+    if (!institutionName.trim() || !effectiveSlug || !displayName.trim() || !email.trim() || !password) {
+      Alert.alert('Eksik bilgi', 'Tüm alanları doldurun.');
+      return;
+    }
+    if (password.length < 6) {
+      Alert.alert('Şifre', 'Şifre en az 6 karakter olmalı.');
       return;
     }
 
     setCreating(true);
     try {
-      await resetAfterSeed();
-      await createEmptyInstitution(institutionName.trim());
-      await queryClient.invalidateQueries({ queryKey: ['welcome-status'] });
-      await queryClient.invalidateQueries({ queryKey: ['demo-users'] });
+      await createTenantAndLogin({
+        name: institutionName.trim(),
+        slug: effectiveSlug,
+        orgType,
+        owner: {
+          email: email.trim(),
+          password,
+          displayName: displayName.trim(),
+        },
+      });
       Alert.alert(
         'Kurum oluşturuldu',
-        'Kurum Müdürü ile giriş yapın (PIN: 1234). Ardından birim, personel ve vardiyaları uygulama içinden ekleyebilirsiniz.',
-        [{ text: 'Giriş Yap', onPress: () => router.replace('/login') }],
+        `"${institutionName.trim()}" sunucuda hazır. Personel eklemeye başlayabilirsiniz.`,
+        [{ text: 'Devam', onPress: () => router.replace('/') }],
       );
     } catch (e) {
       Alert.alert('Hata', e instanceof Error ? e.message : 'Kurum oluşturulamadı.');
@@ -48,41 +81,91 @@ export default function CreateInstitutionScreen() {
         <View style={[styles.iconWrap, { backgroundColor: unitsTone.light }]}>
           <Ionicons name="business" size={28} color={unitsTone.main} />
         </View>
-        <Text style={styles.title}>Yeni Kurum Oluştur</Text>
+        <Text style={styles.title}>Yeni Kurum / İşletme</Text>
         <Text style={styles.subtitle}>
-          Kurumunuzu oluşturun. Varsayılan yönetici hesabı otomatik eklenecek.
+          Sunucuda size özel veritabanı oluşturulur. API: {API_BASE_URL.replace(/^https?:\/\//, '')}
         </Text>
       </View>
 
       <View style={[styles.card, shadows.sm]}>
+        <View style={styles.typeRow}>
+          <Pressable
+            style={[styles.typeChip, orgType === 'INSTITUTION' && styles.typeChipActive]}
+            onPress={() => setOrgType('INSTITUTION')}
+          >
+            <Text
+              style={[styles.typeChipText, orgType === 'INSTITUTION' && styles.typeChipTextActive]}
+            >
+              Kurum
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[styles.typeChip, orgType === 'BUSINESS' && styles.typeChipActive]}
+            onPress={() => setOrgType('BUSINESS')}
+          >
+            <Text style={[styles.typeChipText, orgType === 'BUSINESS' && styles.typeChipTextActive]}>
+              İşletme
+            </Text>
+          </Pressable>
+        </View>
+
         <Input
-          label="Kurum Adı"
+          label="Kurum / İşletme Adı"
           value={institutionName}
-          onChangeText={setInstitutionName}
+          onChangeText={(value) => {
+            setInstitutionName(value);
+            if (!slugTouched) setSlug(slugify(value));
+          }}
           placeholder="Örn: Merkez Hastanesi"
           autoFocus
         />
+        <Input
+          label="Kurum kodu (slug)"
+          value={effectiveSlug}
+          onChangeText={(value) => {
+            setSlugTouched(true);
+            setSlug(slugify(value));
+          }}
+          placeholder="merkez_hastanesi"
+          autoCapitalize="none"
+        />
+        <Input
+          label="Yönetici adı"
+          value={displayName}
+          onChangeText={setDisplayName}
+          placeholder="Ad Soyad"
+        />
+        <Input
+          label="E-posta"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          placeholder="yonetici@kurum.com"
+        />
+        <Input
+          label="Şifre"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          placeholder="En az 6 karakter"
+        />
 
         <View style={styles.infoBox}>
-          <Ionicons name="information-circle-outline" size={20} color={colors.info} />
+          <Ionicons name="cloud-outline" size={20} color={colors.info} />
           <Text style={styles.infoText}>
-            Kurum Müdürü hesabı oluşturulur. Giriş PIN: <Text style={styles.pin}>1234</Text>
+            Bu hesap kurum yöneticisidir. Daha sonra personel yetkilisi davet edebilirsiniz.
           </Text>
         </View>
 
         <Button
-          title="Kurumu Oluştur"
+          title="Kurumu Oluştur ve Giriş Yap"
           onPress={handleCreate}
           loading={creating}
           fullWidth
           size="lg"
         />
-        <Button
-          title="Geri"
-          onPress={() => router.back()}
-          variant="ghost"
-          fullWidth
-        />
+        <Button title="Geri" onPress={() => router.back()} variant="ghost" fullWidth />
       </View>
     </ScrollView>
   );
@@ -122,6 +205,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
+  typeRow: { flexDirection: 'row', gap: spacing.sm },
+  typeChip: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.offLight,
+    alignItems: 'center',
+  },
+  typeChipActive: { backgroundColor: colors.primary },
+  typeChipText: { ...typography.label, color: colors.textSecondary },
+  typeChipTextActive: { color: colors.textInverse },
   infoBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -131,5 +225,4 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   infoText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1 },
-  pin: { fontWeight: '700', color: colors.text },
 });

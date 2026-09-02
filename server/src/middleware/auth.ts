@@ -7,7 +7,11 @@ import {
   type AuthUser,
 } from '../services/authService.js';
 
-export type AuthedRequest = Request & {
+/**
+ * Rota parametreleri her zaman tekil string'tir; Express 5 tiplerindeki
+ * `string | string[]` birleşimi rotalarımızda geçerli değildir.
+ */
+export type AuthedRequest = Request<Record<string, string>> & {
   auth?: AuthUser;
   tenantPool?: ReturnType<typeof getTenantPool>;
 };

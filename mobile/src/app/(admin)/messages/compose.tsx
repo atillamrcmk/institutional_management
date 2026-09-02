@@ -51,7 +51,7 @@ export default function ComposeMessageScreen() {
     enabled: audienceType === 'PERSONNEL' && Boolean(unitFilterId),
     queryFn: async () => {
       if (!unitFilterId) return [];
-      return getRepositories().units.getPersonnelForUnit(unitFilterId);
+      return getRepositories().units.getActivePersonnelForUnit(unitFilterId);
     },
   });
 

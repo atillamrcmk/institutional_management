@@ -154,6 +154,9 @@ export interface AuthRepository {
     personnelId?: string | null;
     pin?: string | null;
     canMessageAdmins?: boolean;
+    /** Sunucu modunda hesap davetinde kullanılır; verilmezse geçici kimlik üretilir. */
+    email?: string | null;
+    password?: string | null;
   }): Promise<User>;
   updateUser(
     id: string,

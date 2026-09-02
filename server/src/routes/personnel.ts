@@ -5,6 +5,7 @@ import {
   requirePermission,
   type AuthedRequest,
 } from '../middleware/auth.js';
+import { writeAuditLog } from '../services/auditLog.js';
 
 export const personnelRouter = Router();
 
@@ -164,6 +165,74 @@ personnelRouter.patch(
       res.status(400).json({
         error: error instanceof Error ? error.message : 'Güncelleme başarısız',
       });
+    }
+  },
+);
+
+/**
+ * Yumuşak silme: kayıt korunur, status INACTIVE olur.
+ * Açık birim ve vardiya bağlantıları da kapatılır.
+ */
+personnelRouter.delete(
+  '/:id',
+  requirePermission('personnel.manage'),
+  async (req: AuthedRequest, res) => {
+    const pool = req.tenantPool!;
+    const client = await pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const result = await client.query(
+        `UPDATE personnel SET status = 'INACTIVE', updated_at = NOW()
+          WHERE id = $1 AND status <> 'INACTIVE'
+          RETURNING *`,
+        [req.params.id],
+      );
+
+      if (!result.rowCount) {
+        await client.query('ROLLBACK');
+        const exists = await pool.query(`SELECT id FROM personnel WHERE id = $1`, [
+          req.params.id,
+        ]);
+        res
+          .status(exists.rowCount ? 200 : 404)
+          .json(
+            exists.rowCount
+              ? { ok: true, alreadyInactive: true, id: req.params.id }
+              : { error: 'Personel bulunamadı' },
+          );
+        return;
+      }
+
+      await client.query(
+        `UPDATE personnel_unit_history SET ended_at = NOW()
+          WHERE personnel_id = $1 AND ended_at IS NULL`,
+        [req.params.id],
+      );
+      await client.query(
+        `UPDATE personnel_shift_assignments SET ended_at = NOW()
+          WHERE personnel_id = $1 AND ended_at IS NULL`,
+        [req.params.id],
+      );
+
+      await client.query('COMMIT');
+
+      await writeAuditLog(pool, {
+        userId: req.auth!.userId,
+        action: 'personnel.deactivate',
+        entityType: 'personnel',
+        entityId: req.params.id,
+      });
+
+      res.json({ ok: true, personnel: result.rows[0] });
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      res.status(400).json({
+        error: error instanceof Error ? error.message : 'Personel silinemedi',
+      });
+    } finally {
+      client.release();
     }
   },
 );

@@ -50,11 +50,22 @@ async function logStep(
   );
 }
 
-async function applyTenantSchema(dbName: string): Promise<void> {
-  const sqlPath = path.join(__dirname, '..', '..', 'sql', 'tenant', '001_tenant.sql');
-  const sql = fs.readFileSync(sqlPath, 'utf8');
+/** Sırayla uygulanan tenant şema dosyaları. Hepsi idempotent olmalıdır. */
+export const TENANT_MIGRATIONS = ['001_tenant.sql', '002_operations.sql'] as const;
+
+export function tenantSqlDir(): string {
+  return path.join(__dirname, '..', '..', 'sql', 'tenant');
+}
+
+export function readTenantMigration(fileName: string): string {
+  return fs.readFileSync(path.join(tenantSqlDir(), fileName), 'utf8');
+}
+
+export async function applyTenantSchema(dbName: string): Promise<void> {
   const pool = getTenantPool(dbName);
-  await pool.query(sql);
+  for (const fileName of TENANT_MIGRATIONS) {
+    await pool.query(readTenantMigration(fileName));
+  }
 }
 
 export async function provisionTenant(input: CreateTenantInput) {
